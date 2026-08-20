@@ -16,5 +16,15 @@
             "status": "Present",
             "confidence": 70.7
         }
+    },
+    "2026-08-18": {
+        "CW001": {
+            "student_id": "CW001",
+            "name": "Ali",
+            "date": "2026-08-18",
+            "time": "14:12:41",
+            "status": "Present",
+            "confidence": 48.81
+        }
     }
 }
