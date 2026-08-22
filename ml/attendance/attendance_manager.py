@@ -1,76 +1,74 @@
-import json
+import sys
 from pathlib import Path
 from datetime import datetime
 
+CURRENT_DIR = Path(__file__).resolve().parent
+UTILS_DIR = CURRENT_DIR.parents[0] / "utils"
+
+sys.path.append(str(UTILS_DIR))
+
+from mongo_client import get_database
+
 
 class AttendanceManager:
+    """
+    MongoDB-backed version of AttendanceManager.
+
+    Public method names (mark_attendance, get_today_attendance,
+    get_by_date, mark_absent) are kept identical to what the rest
+    of the project expects, so attendance_pipeline.py and
+    backend/main.py don't need any changes.
+
+    One document per attendance record, e.g.:
+    {
+        "date": "2026-08-22",
+        "student_id": "CW001",
+        "name": "Ali",
+        "time": "17:48:14",
+        "status": "Present",
+        "confidence": 94.0
+    }
+    """
 
     def __init__(self):
 
-        project_root = Path(__file__).resolve().parents[2]
+        db = get_database()
 
-        self.file_path = (
-            project_root
-            / "database"
-            / "attendance.json"
+        self.collection = db["attendance"]
+
+        # Prevent duplicate (date, student_id) pairs at the
+        # database level too, not just in application logic.
+        self.collection.create_index(
+            [("date", 1), ("student_id", 1)],
+            unique=True
         )
-
-        self.file_path.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        if not self.file_path.exists():
-            self.save({})
-
-    def load(self):
-
-        with open(
-            self.file_path,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            return json.load(file)
-
-    def save(self, data):
-
-        with open(
-            self.file_path,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                data,
-                file,
-                indent=4
-            )
 
     def mark_attendance(
         self,
         student_id,
         name,
-        confidence
+        confidence,
+        status="Present"
     ):
-
-        data = self.load()
 
         now = datetime.now()
 
         date = now.strftime("%Y-%m-%d")
         time = now.strftime("%H:%M:%S")
 
-        if date not in data:
-            data[date] = {}
+        existing = self.collection.find_one({
+            "date": date,
+            "student_id": student_id
+        })
 
-        # Prevent duplicate attendance
-        if student_id in data[date]:
+        if existing is not None:
+
+            existing.pop("_id", None)
 
             return {
                 "success": False,
                 "already_marked": True,
-                "record": data[date][student_id]
+                "record": existing
             }
 
         record = {
@@ -78,16 +76,11 @@ class AttendanceManager:
             "name": name,
             "date": date,
             "time": time,
-            "status": "Present",
-            "confidence": round(
-                confidence * 100,
-                2
-            )
+            "status": status,
+            "confidence": round(confidence * 100, 2)
         }
 
-        data[date][student_id] = record
-
-        self.save(data)
+        self.collection.insert_one(dict(record))
 
         return {
             "success": True,
@@ -97,23 +90,24 @@ class AttendanceManager:
 
     def get_today_attendance(self):
 
-        data = self.load()
+        today = datetime.now().strftime("%Y-%m-%d")
 
-        today = datetime.now().strftime(
-            "%Y-%m-%d"
-        )
-
-        return data.get(today, {})
+        return self.get_by_date(today)
 
     def get_by_date(self, date):
         """
         Returns { student_id: record } for the given date.
-        (Needed by backend/main.py's /attendance/{date} route.)
         """
 
-        data = self.load()
+        records = {}
 
-        return data.get(date, {})
+        for doc in self.collection.find({"date": date}):
+
+            doc.pop("_id", None)
+
+            records[doc["student_id"]] = doc
+
+        return records
 
     def mark_absent(
         self,
@@ -125,24 +119,27 @@ class AttendanceManager:
         Explicitly marks someone Absent for a given date (defaults
         to today). Meant to be run once, e.g. at end of day, for
         every registered student who never got marked Present.
-        """
 
-        data = self.load()
+        Won't overwrite an existing record (e.g. if they were
+        already marked Present earlier that day).
+        """
 
         if date is None:
             date = datetime.now().strftime("%Y-%m-%d")
 
-        if date not in data:
-            data[date] = {}
+        existing = self.collection.find_one({
+            "date": date,
+            "student_id": student_id
+        })
 
-        # Don't overwrite an existing record (e.g. if they were
-        # already marked Present earlier that day).
-        if student_id in data[date]:
+        if existing is not None:
+
+            existing.pop("_id", None)
 
             return {
                 "success": False,
                 "already_marked": True,
-                "record": data[date][student_id]
+                "record": existing
             }
 
         record = {
@@ -154,9 +151,7 @@ class AttendanceManager:
             "confidence": None
         }
 
-        data[date][student_id] = record
-
-        self.save(data)
+        self.collection.insert_one(dict(record))
 
         return {
             "success": True,

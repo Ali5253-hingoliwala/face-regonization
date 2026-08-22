@@ -35,6 +35,7 @@ from fast_liveness import FastLivenessSignals
 from liveness import LivenessDetector
 
 from attendance_manager import AttendanceManager
+from session_manager import SessionManager
 
 
 # ============================================================
@@ -150,6 +151,30 @@ def main():
     # the database every frame — important now that the database is
     # a network call (MongoDB Atlas), not a local file.
     today_attendance_cache = attendance.get_today_attendance()
+
+    # --------------------------------------------------------
+    # Lecture session (Present vs Late is decided relative to
+    # this session's start time, not just "today")
+    # --------------------------------------------------------
+
+    session_manager = SessionManager()
+    current_session = session_manager.get_current_session()
+
+    if current_session is not None:
+
+        print(
+            f"\nActive lecture session found — started at "
+            f"{current_session['start_time'].strftime('%H:%M:%S')}, "
+            f"{current_session['duration_minutes']} min duration, "
+            f"late after {current_session['late_after_minutes']} min."
+        )
+
+    else:
+
+        print(
+            "\nNo active lecture session — everyone recognized will "
+            "be marked Present (no Late distinction without a session)."
+        )
 
     # One LivenessDetector per recognized student_id, created on
     # first sight and dropped once they pass or once already marked.
@@ -326,28 +351,48 @@ def main():
                     status_lines.append(f"{name}: {live_status}  (gaze: {gaze_text})")
 
                 # ------------------------------------------------
-                # LIVE -> mark attendance
+                # LIVE -> mark attendance (Present or Late,
+                # depending on the active lecture session)
                 # ------------------------------------------------
 
                 if live_status == "LIVE":
 
-                    result = attendance.mark_attendance(
-                        student_id=student_id,
-                        name=name,
-                        confidence=score
-                    )
+                    if current_session is not None:
 
-                    if result["success"]:
-
-                        print(
-                            f"[ATTENDANCE] {name} marked PRESENT "
-                            f"({score * 100:.1f}%)"
+                        attendance_status = session_manager.get_status_for_time(
+                            current_session
                         )
 
-                        # Update the cache locally — this is the ONLY
-                        # place attendance data changes during the
-                        # session, so no need to re-query the database.
-                        today_attendance_cache[student_id] = result["record"]
+                    else:
+
+                        attendance_status = "Present"
+
+                    # None means the session's full duration has
+                    # already elapsed — too late even for "Late".
+                    # Leave them unmarked; the end-of-session
+                    # absentee sweep will catch them as Absent.
+                    if attendance_status is not None:
+
+                        result = attendance.mark_attendance(
+                            student_id=student_id,
+                            name=name,
+                            confidence=score,
+                            status=attendance_status
+                        )
+
+                        if result["success"]:
+
+                            print(
+                                f"[ATTENDANCE] {name} marked "
+                                f"{attendance_status.upper()} "
+                                f"({score * 100:.1f}%)"
+                            )
+
+                            # Update the cache locally — this is the
+                            # ONLY place attendance data changes during
+                            # the session, so no need to re-query the
+                            # database.
+                            today_attendance_cache[student_id] = result["record"]
 
                     liveness_controllers.pop(student_id, None)
 
