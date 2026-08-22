@@ -43,9 +43,27 @@ from attendance_manager import AttendanceManager
 
 RECOGNITION_THRESHOLD = 0.45
 
-# head_pose.py returns "LEFT" / "CENTER" / "RIGHT".
-# Either side counts as head movement for liveness.
-HEAD_MOVEMENT_DIRECTIONS = {"LEFT", "RIGHT"}
+# Only re-run YOLO detection every N frames too. The bounding box
+# holds its last position for a frame or two in between -- barely
+# noticeable, and it means YOLO isn't run at all on most frames.
+# Note: blink/head-pose/gaze detection is NOT affected by this --
+# that runs on the raw frame every single frame regardless, so
+# liveness responsiveness stays fast no matter what this is set to.
+DETECTION_INTERVAL = 2
+
+# Only re-run InsightFace recognition every N frames instead of
+# every single frame. YOLO still detects every frame so the box
+# stays smooth; only the "who is this" check runs less often.
+# Safe for a stationary checkpoint (one person standing to be
+# verified), not meant for tracking multiple moving people.
+RECOGNITION_INTERVAL = 5
+
+
+def bbox_area(bbox):
+
+    x1, y1, x2, y2 = bbox
+
+    return (x2 - x1) * (y2 - y1)
 
 
 # ============================================================
@@ -155,6 +173,13 @@ def main():
     print("\nCamera started.")
     print("Press Q to exit.\n")
 
+    frame_count = 0
+    cached_match = None
+    cached_faces = []
+
+    spoof_detected = False
+    spoof_name = None
+
     # --------------------------------------------------------
     # Main loop
     # --------------------------------------------------------
@@ -168,43 +193,79 @@ def main():
             break
 
         # ----------------------------------------------------
-        # STEP 1 — Face detection
+        # STEP 1 — Face detection (throttled — see DETECTION_INTERVAL.
+        # Liveness signals below run every frame regardless, since
+        # they process the raw frame directly, not YOLO's box.)
         # ----------------------------------------------------
 
-        faces = detector.detect(frame)
+        if frame_count % DETECTION_INTERVAL == 0 or not cached_faces:
+            cached_faces = detector.detect(frame)
+
+        faces = cached_faces
 
         # ----------------------------------------------------
-        # STEP 2 — Recognition
+        # STEP 2 — Recognition (only every RECOGNITION_INTERVAL
+        # frames — this is the expensive step, so we don't run
+        # it every single frame)
         # ----------------------------------------------------
 
-        recognized_faces = recognizer.get_faces(frame)
+        if not faces:
+
+            cached_match = None
+
+        else:
+
+            should_run_recognition = (
+                frame_count % RECOGNITION_INTERVAL == 0
+                or cached_match is None
+            )
+
+            if should_run_recognition:
+
+                recognized_faces = recognizer.get_faces(frame)
+
+                primary_face = max(faces, key=lambda f: bbox_area(f["bbox"]))
+
+                r_face = match_yolo_to_insightface(
+                    primary_face["bbox"],
+                    recognized_faces
+                )
+
+                if r_face is not None:
+
+                    cached_match = recognizer.find_best_match(
+                        r_face.embedding,
+                        DATABASE,
+                        threshold=RECOGNITION_THRESHOLD
+                    )
+
+                else:
+
+                    cached_match = None
+
+        frame_count += 1
 
         # ----------------------------------------------------
-        # STEP 3 — Match each YOLO face to InsightFace + database
+        # STEP 3 — Build results: cached identity applies to the
+        # current largest ("primary") box; any other faces in
+        # frame show as unknown (this pipeline is designed for a
+        # one-person-at-a-time checkpoint, not crowd tracking).
         # ----------------------------------------------------
 
         face_results = []
 
-        for face in faces:
+        if faces:
 
-            bbox = face["bbox"]
+            primary_face = max(faces, key=lambda f: bbox_area(f["bbox"]))
 
-            r_face = match_yolo_to_insightface(bbox, recognized_faces)
+            for face in faces:
 
-            match = None
+                match = cached_match if face is primary_face else None
 
-            if r_face is not None:
-
-                match = recognizer.find_best_match(
-                    r_face.embedding,
-                    DATABASE,
-                    threshold=RECOGNITION_THRESHOLD
-                )
-
-            face_results.append({
-                "bbox": bbox,
-                "match": match
-            })
+                face_results.append({
+                    "bbox": face["bbox"],
+                    "match": match
+                })
 
         # ----------------------------------------------------
         # STEP 4 — Anti-spoofing + liveness + attendance
@@ -247,17 +308,22 @@ def main():
 
                 signals = liveness_signals.process(frame)
 
-                if signals["blink"]:
-                    live_ctrl.register_blink()
-
-                if signals["direction"] in HEAD_MOVEMENT_DIRECTIONS:
-                    live_ctrl.register_head_movement()
-
-                live_status = live_ctrl.get_status()
+                live_status = live_ctrl.update(
+                    blink=signals["blink"],
+                    direction=signals["direction"],
+                    gaze=signals["gaze"]
+                )
 
                 gaze_text = signals["gaze"] if signals["gaze"] else "N/A"
 
-                status_lines.append(f"{name}: {live_status}  (gaze: {gaze_text})")
+                if live_status == "POSSIBLE PHOTO - NO MOVEMENT DETECTED":
+                    status_lines.append(
+                        f"⚠ {name}: POSSIBLE PHOTO — please move/blink naturally"
+                    )
+                    spoof_detected = True
+                    spoof_name = name
+                else:
+                    status_lines.append(f"{name}: {live_status}  (gaze: {gaze_text})")
 
                 # ------------------------------------------------
                 # LIVE -> mark attendance
@@ -284,14 +350,6 @@ def main():
                         today_attendance_cache[student_id] = result["record"]
 
                     liveness_controllers.pop(student_id, None)
-
-                # ------------------------------------------------
-                # FAILED -> let them try again
-                # ------------------------------------------------
-
-                elif live_status == "FAILED":
-
-                    live_ctrl.reset()
 
         # ----------------------------------------------------
         # Draw all face boxes
@@ -365,10 +423,59 @@ def main():
         )
 
         # ----------------------------------------------------
+        # Fake photo detected — show a clear warning overlay,
+        # then automatically close the camera.
+        # ----------------------------------------------------
+
+        if spoof_detected:
+
+            overlay = frame.copy()
+
+            cv2.rectangle(
+                overlay,
+                (0, 0),
+                (frame.shape[1], frame.shape[0]),
+                (0, 0, 255),
+                -1
+            )
+
+            frame = cv2.addWeighted(overlay, 0.5, frame, 0.5, 0)
+
+            cv2.putText(
+                frame,
+                "FAKE / DUPLICATE PHOTO DETECTED",
+                (30, frame.shape[0] // 2 - 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (255, 255, 255),
+                3
+            )
+
+            cv2.putText(
+                frame,
+                f"({spoof_name}) — closing camera...",
+                (30, frame.shape[0] // 2 + 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 255),
+                2
+            )
+
+        # ----------------------------------------------------
         # Display
         # ----------------------------------------------------
 
         cv2.imshow("VisionAttend AI - Main Pipeline", frame)
+
+        if spoof_detected:
+
+            print(
+                f"\n[SECURITY] Fake/duplicate photo detected for "
+                f"{spoof_name}. Closing camera automatically."
+            )
+
+            cv2.waitKey(2500)
+            break
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break

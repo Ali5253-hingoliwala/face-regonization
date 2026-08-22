@@ -2,87 +2,103 @@ import time
 
 
 class LivenessDetector:
+    """
+    Fast, lightweight liveness check.
+
+    Instead of requiring a blink AND a head turn within a fixed
+    window (slow, rigid), this treats blink OR head movement OR
+    gaze movement as proof of life -- a real person naturally does
+    at least one of these within a couple of seconds.
+
+    If NONE of the three signals ever change over a longer window,
+    that's a strong sign the camera is looking at a static photo
+    rather than a real face.
+    """
 
     def __init__(self):
 
-        self.blink_detected = False
-        self.head_movement_detected = False
-
         self.start_time = time.time()
 
-        self.timeout = 15
+        # How long to wait for ANY natural movement before
+        # considering the check still in progress.
+        self.checking_timeout = 3.0
 
-        self.status = "WAITING"
+        # If completely static for this long, flag as a likely photo.
+        self.static_photo_timeout = 15.0
 
+        self.last_direction = None
+        self.last_gaze = None
 
-    def register_blink(self):
+        self.movement_detected = False
+        self.movement_type = None
 
-        self.blink_detected = True
+        self.status = "CHECKING"
 
-        self.update_status()
+    def update(self, blink, direction, gaze):
+        """
+        Call this once per frame with the latest signals from
+        FastLivenessSignals.process(frame):
+            blink: bool
+            direction: "LEFT" / "CENTER" / "RIGHT" / None
+            gaze: "LEFT" / "CENTER" / "RIGHT" / None
+        """
 
+        elapsed = time.time() - self.start_time
 
-    def register_head_movement(self):
+        if blink:
+            self.movement_detected = True
+            self.movement_type = self.movement_type or "blink"
 
-        self.head_movement_detected = True
+        if (
+            direction is not None
+            and self.last_direction is not None
+            and direction != self.last_direction
+        ):
+            self.movement_detected = True
+            self.movement_type = self.movement_type or "head movement"
 
-        self.update_status()
+        if (
+            gaze is not None
+            and self.last_gaze is not None
+            and gaze != self.last_gaze
+        ):
+            self.movement_detected = True
+            self.movement_type = self.movement_type or "gaze movement"
 
+        if direction is not None:
+            self.last_direction = direction
 
-    def update_status(self):
+        if gaze is not None:
+            self.last_gaze = gaze
 
-        if self.blink_detected and self.head_movement_detected:
+        if self.movement_detected:
 
             self.status = "LIVE"
 
+        elif elapsed > self.static_photo_timeout:
 
-        elif time.time() - self.start_time > self.timeout:
-
-            self.status = "FAILED"
-
-
-        elif self.blink_detected:
-
-            self.status = "HEAD MOVEMENT REQUIRED"
-
-
-        elif self.head_movement_detected:
-
-            self.status = "BLINK REQUIRED"
-
+            self.status = "POSSIBLE PHOTO - NO MOVEMENT DETECTED"
 
         else:
 
-            self.status = "BLINK + HEAD MOVEMENT REQUIRED"
-
-
-    def is_live(self):
-
-        self.update_status()
-
-        return self.status == "LIVE"
-
-
-    def has_failed(self):
-
-        self.update_status()
-
-        return self.status == "FAILED"
-
-
-    def get_status(self):
-
-        self.update_status()
+            self.status = "CHECKING"
 
         return self.status
 
+    def get_status(self):
+        return self.status
+
+    def get_movement_type(self):
+        return self.movement_type
 
     def reset(self):
 
-        self.blink_detected = False
-
-        self.head_movement_detected = False
-
         self.start_time = time.time()
 
-        self.status = "WAITING"
+        self.last_direction = None
+        self.last_gaze = None
+
+        self.movement_detected = False
+        self.movement_type = None
+
+        self.status = "CHECKING"

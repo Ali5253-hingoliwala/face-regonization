@@ -26,5 +26,23 @@
             "status": "Present",
             "confidence": 48.81
         }
+    },
+    "2026-08-22": {
+        "CW001": {
+            "student_id": "CW001",
+            "name": "Ali",
+            "date": "2026-08-22",
+            "time": null,
+            "status": "Absent",
+            "confidence": null
+        },
+        "cw002": {
+            "student_id": "cw002",
+            "name": "hyder",
+            "date": "2026-08-22",
+            "time": null,
+            "status": "Absent",
+            "confidence": null
+        }
     }
 }

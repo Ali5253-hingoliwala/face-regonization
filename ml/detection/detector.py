@@ -37,7 +37,7 @@ class FaceDetector:
         results = self.model.predict(
             source=frame,
             conf=self.confidence,
-            imgsz=640,
+            imgsz=320,
             verbose=False
         )
 

@@ -31,7 +31,9 @@ if not MONGO_URI:
 # Single shared MongoDB client for the whole project
 # ============================================================
 
-_client = MongoClient(MONGO_URI)
+import certifi
+
+_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 
 DATABASE_NAME = "visionattend"
 

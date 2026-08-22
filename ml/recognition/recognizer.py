@@ -15,7 +15,7 @@ class FaceRecognizer:
 
         self.app.prepare(
             ctx_id=-1,
-            det_size=(640, 640)
+            det_size=(320, 320)
         )
 
         print("Face Recognition Ready!")

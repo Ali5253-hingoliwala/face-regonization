@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -120,6 +121,49 @@ def get_all_students():
     return {
         "count": len(students),
         "students": students
+    }
+
+
+# ============================================================
+# Absentee marking
+# ============================================================
+
+@app.post("/attendance/mark-absentees")
+def mark_absentees():
+    """
+    Marks every registered student who wasn't already marked
+    Present today as Absent. Safe to call more than once — anyone
+    already recorded (Present or Absent) is left untouched.
+    """
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    all_students = face_database.get_all()
+    present_today = attendance_manager.get_by_date(today)
+
+    marked_absent = []
+    already_recorded = []
+
+    for student_id, person in all_students.items():
+
+        if student_id in present_today:
+
+            already_recorded.append(student_id)
+            continue
+
+        result = attendance_manager.mark_absent(
+            student_id=student_id,
+            name=person["name"],
+            date=today
+        )
+
+        if result["success"]:
+            marked_absent.append(student_id)
+
+    return {
+        "date": today,
+        "marked_absent": marked_absent,
+        "already_recorded_count": len(already_recorded)
     }
 
 
