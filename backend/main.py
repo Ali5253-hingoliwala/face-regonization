@@ -124,15 +124,7 @@ def _build_summary(student_id):
     present = sum(1 for r in records if r.get("status") == "Present")
     late = sum(1 for r in records if r.get("status") == "Late")
     absent = sum(1 for r in records if r.get("status") == "Absent")
-    return {
-        "student_id": student_id,
-        "total_sessions": total,
-        "total_days": total,
-        "present": present,
-        "late": late,
-        "absent": absent,
-        "attendance_percentage": round(((present + late) / total) * 100, 1) if total else 0
-    }
+    return {"student_id": student_id, "total_sessions": total, "total_days": total, "present": present, "late": late, "absent": absent, "attendance_percentage": round(((present + late) / total) * 100, 1) if total else 0}
 
 
 @app.get("/health")
@@ -157,12 +149,8 @@ def signup(request: SignupRequest):
     student_id = request.student_id.strip()
     all_students = face_database.get_all()
     existing_face = all_students.get(student_id)
-
     if len(request.password) < 6:
         raise HTTPException(status_code=422, detail="Password must be at least 6 characters.")
-
-    # New students register their face here. This writes to the same
-    # Atlas faces collection used by admin registration and ML recognition.
     if existing_face is None:
         name = (request.name or "").strip()
         if not name:
@@ -170,23 +158,12 @@ def signup(request: SignupRequest):
         embedding = _capture_embedding(request.face_image)
         face_database.add_person(student_id, name, embedding)
     else:
-        # Existing admin-registered student may also refresh their face
-        # during account creation, but the name remains admin/DB controlled.
         name = existing_face["name"]
         embedding = _capture_embedding(request.face_image)
         face_database.add_person(student_id, name, embedding)
-
-    user = user_manager.create_user(
-        username=student_id,
-        password_hash=hash_password(request.password),
-        role="student",
-        student_id=student_id,
-        name=name
-    )
-
+    user = user_manager.create_user(username=student_id, password_hash=hash_password(request.password), role="student", student_id=student_id, name=name)
     if user is None:
         raise HTTPException(status_code=409, detail="An account for this student ID already exists.")
-
     return {"success": True, "username": student_id, "name": name, "role": "student", "face_registered": True}
 
 
@@ -337,20 +314,20 @@ def schedule_session(request: ScheduleSessionRequest, admin=Depends(require_admi
     except ValueError:
         raise HTTPException(status_code=400, detail="planned_start_time must be ISO 8601, e.g. 2026-08-25T09:00:00")
     session = session_manager.create_session(name=request.name, planned_start_time=planned_time, duration_minutes=request.duration_minutes, late_after_minutes=request.late_after_minutes)
-    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"]}
+    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"]}
 
 
 @app.get("/session/scheduled")
 def list_scheduled_sessions(admin=Depends(require_admin)):
     sessions = session_manager.get_scheduled_sessions()
     now = datetime.now()
-    return {"count": len(sessions), "sessions": [{"session_id": s["session_id"], "name": s["name"], "start_time": s["start_time"].isoformat(), "duration_minutes": s["duration_minutes"], "late_after_minutes": s["late_after_minutes"], "overdue": s["start_time"] < now} for s in sessions]}
+    return {"count": len(sessions), "sessions": [{"session_id": s["session_id"], "name": s["name"], "start_time": s["start_time"].isoformat(), "planned_start_time": s["planned_start_time"].isoformat(), "duration_minutes": s["duration_minutes"], "late_after_minutes": s["late_after_minutes"], "overdue": s["planned_start_time"] < now} for s in sessions]}
 
 
 @app.get("/session/history")
 def session_history(admin=Depends(require_admin)):
     sessions = session_manager.get_session_history()
-    return {"count": len(sessions), "sessions": [{"session_id": s["session_id"], "name": s["name"], "start_time": s["start_time"].isoformat(), "duration_minutes": s["duration_minutes"], "status": s["status"], "ended_at": s.get("ended_at")} for s in sessions]}
+    return {"count": len(sessions), "sessions": [{"session_id": s["session_id"], "name": s["name"], "start_time": s["start_time"].isoformat(), "planned_start_time": s["planned_start_time"].isoformat(), "duration_minutes": s["duration_minutes"], "status": s["status"], "ended_at": s.get("ended_at")} for s in sessions]}
 
 
 @app.delete("/session/scheduled/{session_id}")
@@ -379,7 +356,7 @@ def start_scheduled_session(session_id: str, admin=Depends(require_admin)):
         raise HTTPException(status_code=404, detail=result.get("message", "Session not found."))
     _launch_pipeline_if_not_running()
     session = result["session"]
-    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"], "pipeline_started": True}
+    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"], "pipeline_started": True}
 
 
 @app.post("/session/end")
@@ -413,7 +390,7 @@ def get_current_session(admin=Depends(require_admin)):
             pipeline_process.terminate()
         pipeline_process = None
         return {"active": False, "status": "closed", "session_id": session["session_id"], "marked_absent": marked_absent}
-    return {"active": True, "status": "active", "session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "elapsed_minutes": round(elapsed_minutes, 1), "remaining_minutes": round(remaining_minutes, 1)}
+    return {"active": True, "status": "active", "session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "elapsed_minutes": round(elapsed_minutes, 1), "remaining_minutes": round(remaining_minutes, 1)}
 
 
 if __name__ == "__main__":
