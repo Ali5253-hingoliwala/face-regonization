@@ -15,32 +15,23 @@ interface AuthContextValue extends AuthState {
   isAuthenticated: boolean;
   authReady: boolean;
   login: (username: string, password: string) => Promise<Role>;
-  signup: (studentId: string, password: string) => Promise<void>;
+  signup: (studentId: string, name: string, password: string, faceImage: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    token: null,
-    role: null,
-    name: null,
-    studentId: null,
-  });
+  const [state, setState] = useState<AuthState>({ token: null, role: null, name: null, studentId: null });
   const [authReady, setAuthReady] = useState(false);
 
-  // Restore local authentication before ProtectedRoute is allowed to redirect.
   useEffect(() => {
     const token = localStorage.getItem("va_token");
     const role = localStorage.getItem("va_role") as Role | null;
     const name = localStorage.getItem("va_name");
     const studentId = localStorage.getItem("va_student_id");
 
-    if (token && role) {
-      setState({ token, role, name, studentId });
-    }
-
+    if (token && role) setState({ token, role, name, studentId });
     setAuthReady(true);
   }, []);
 
@@ -53,18 +44,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (name) localStorage.setItem("va_name", name);
     if (student_id) localStorage.setItem("va_student_id", student_id);
 
-    setState({
-      token: access_token,
-      role,
-      name: name ?? null,
-      studentId: student_id ?? null,
-    });
-
+    setState({ token: access_token, role, name: name ?? null, studentId: student_id ?? null });
     return role as Role;
   }
 
-  async function signup(studentId: string, password: string): Promise<void> {
-    await api.post("/auth/signup", { student_id: studentId, password });
+  async function signup(studentId: string, name: string, password: string, faceImage: string): Promise<void> {
+    await api.post("/auth/signup", {
+      student_id: studentId,
+      name,
+      password,
+      face_image: faceImage,
+    });
   }
 
   function logout() {
@@ -76,16 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider
-      value={{
-        ...state,
-        isAuthenticated: !!state.token,
-        authReady,
-        login,
-        signup,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ ...state, isAuthenticated: !!state.token, authReady, login, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -93,8 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
   return ctx;
 }
