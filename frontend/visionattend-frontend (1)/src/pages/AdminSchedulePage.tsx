@@ -1,13 +1,29 @@
-import { useEffect, useState } from "react";
-import { AlertCircle, CalendarClock, CheckCircle2, Play, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, CalendarClock, CheckCircle2, Clock3, Play, Trash2 } from "lucide-react";
 import AdminSidebar from "../components/AdminSidebar";
 import { api } from "../api/client";
 
-type Session = { session_id: string; name: string; start_time: string; duration_minutes: number; late_after_minutes: number; overdue?: boolean };
+type Session = {
+  session_id: string;
+  name: string;
+  start_time: string;
+  planned_start_time?: string;
+  duration_minutes: number;
+  late_after_minutes: number;
+  overdue?: boolean;
+};
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
 
 export default function AdminSchedulePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [name, setName] = useState("Attendance Session");
+  const [name, setName] = useState("");
   const [start, setStart] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,6 +44,9 @@ export default function AdminSchedulePage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  const upcomingCount = useMemo(() => sessions.filter(s => !s.overdue).length, [sessions]);
+  const overdueCount = useMemo(() => sessions.filter(s => s.overdue).length, [sessions]);
+
   async function schedule() {
     setError("");
     setMessage("");
@@ -38,16 +57,15 @@ export default function AdminSchedulePage() {
     }
 
     setSaving(true);
-
     try {
-      // Keep the browser's local date/time. Do not convert to UTC with toISOString().
       await api.post("/session/schedule", {
-        name: name.trim() || "Attendance Session",
+        name: name.trim() || "Untitled Session",
         planned_start_time: start,
         duration_minutes: 45,
         late_after_minutes: 10,
       });
 
+      setName("");
       setStart("");
       setMessage("Session scheduled successfully.");
       await load();
@@ -61,7 +79,6 @@ export default function AdminSchedulePage() {
   async function startNow(id: string) {
     setError("");
     setMessage("");
-
     try {
       await api.post(`/session/start/${id}`);
       setMessage("Session started. The 45-minute timer begins now.");
@@ -74,7 +91,6 @@ export default function AdminSchedulePage() {
   async function cancel(id: string) {
     setError("");
     setMessage("");
-
     try {
       await api.delete(`/session/scheduled/${id}`);
       setMessage("Scheduled session cancelled.");
@@ -91,57 +107,91 @@ export default function AdminSchedulePage() {
         <main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Admin Portal</p>
           <h1 className="mt-1 font-display text-3xl font-semibold">Schedule</h1>
-          <p className="mt-2 text-sm text-ink-muted">Create and manage 45-minute AI attendance sessions.</p>
+          <p className="mt-2 text-sm text-ink-muted">Plan your AI attendance sessions and start them whenever you are ready.</p>
 
-          <section className="mt-6 rounded-2xl border border-line bg-panel p-6 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-accent-soft p-3 text-accent"><CalendarClock size={20}/></div>
-              <div>
-                <h2 className="font-semibold">Schedule Session</h2>
-                <p className="text-xs text-ink-muted">The planned time is a reminder. The 45-minute timer starts when you press Start.</p>
+          <section className="mt-6 overflow-hidden rounded-2xl border border-line bg-panel shadow-sm">
+            <div className="border-b border-line px-6 py-5">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-accent-soft p-3 text-accent"><CalendarClock size={20}/></div>
+                <div>
+                  <h2 className="font-semibold">Schedule a session</h2>
+                  <p className="mt-1 text-xs text-ink-muted">Set a planned date and time. The attendance timer starts only when you press Start.</p>
+                </div>
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <input value={name} onChange={e => setName(e.target.value)} className="rounded-xl border border-line bg-bg px-4 py-3 outline-none focus:border-accent" placeholder="Session name" />
-              <input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} className="rounded-xl border border-line bg-bg px-4 py-3 outline-none focus:border-accent" />
-              <button onClick={schedule} disabled={!start || saving} className="rounded-xl bg-accent px-6 py-3 font-medium text-white disabled:opacity-50">{saving ? "Scheduling..." : "Schedule"}</button>
+            <div className="grid gap-5 p-6 lg:grid-cols-[1.1fr_1fr_auto] lg:items-end">
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-ink-muted">Session name <span className="font-normal text-ink-faint">(optional)</span></span>
+                <input value={name} onChange={e => setName(e.target.value)} className="w-full rounded-xl border border-line bg-bg px-4 py-3 text-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent-soft" placeholder="e.g. Data Structures — Lecture 4" />
+                <span className="mt-1.5 block text-[11px] text-ink-faint">Give it a name you will recognize later.</span>
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-xs font-medium text-ink-muted">Date & time</span>
+                <div className="relative">
+                  <Clock3 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" size={17}/>
+                  <input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} className="w-full rounded-xl border border-line bg-bg py-3 pl-10 pr-3 text-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent-soft" />
+                </div>
+                <span className="mt-1.5 block text-[11px] text-ink-faint">Planned time is a reference; starting late is allowed.</span>
+              </label>
+
+              <button onClick={schedule} disabled={!start || saving} className="rounded-xl bg-accent px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Scheduling..." : "Schedule Session"}</button>
             </div>
 
-            {message && <p className="mt-4 flex items-center gap-2 text-sm text-green-700"><CheckCircle2 size={16}/>{message}</p>}
-            {error && <p className="mt-4 flex items-center gap-2 text-sm text-red-600"><AlertCircle size={16}/>{error}</p>}
+            {message && <div className="mx-6 mb-6 flex items-center gap-2 rounded-xl bg-green-50 px-4 py-3 text-sm text-green-700"><CheckCircle2 size={16}/>{message}</div>}
+            {error && <div className="mx-6 mb-6 flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600"><AlertCircle size={16}/>{error}</div>}
           </section>
 
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <StatCard label="Scheduled" value={String(upcomingCount)} />
+            <StatCard label="Ready to start" value={String(overdueCount)} />
+            <StatCard label="Session length" value="45 min" />
+          </div>
+
           <section className="mt-6 rounded-2xl border border-line bg-panel shadow-sm">
-            <div className="border-b border-line px-6 py-5">
-              <h2 className="font-semibold">Scheduled Sessions</h2>
-              <p className="mt-1 text-xs text-ink-muted">A session remains here until it is started or cancelled, even if its planned time has passed.</p>
+            <div className="flex flex-col gap-2 border-b border-line px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold">Scheduled Sessions</h2>
+                <p className="mt-1 text-xs text-ink-muted">Sessions remain here until you start or cancel them.</p>
+              </div>
+              <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent">{sessions.length} total</span>
             </div>
 
             <div className="divide-y divide-line">
-              {sessions.map(s => (
-                <div key={s.session_id} className="flex flex-col gap-4 px-6 py-5 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold">{s.name}</p>
-                      {s.overdue && <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-medium text-red-600">OVERDUE — READY TO START</span>}
+              {sessions.map(s => {
+                const planned = s.planned_start_time || s.start_time;
+                return (
+                  <div key={s.session_id} className="flex flex-col gap-5 px-6 py-5 transition hover:bg-panel-hover md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate font-semibold">{s.name}</p>
+                        {s.overdue && <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-semibold text-red-600">READY TO START</span>}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-ink-muted">
+                        <span className="inline-flex items-center gap-1.5"><CalendarClock size={14}/>{formatDate(planned)}</span>
+                        <span className="font-medium text-ink">{formatTime(planned)}</span>
+                        <span>45 min</span>
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-ink-faint">Present window: first {s.late_after_minutes} minutes · ID {s.session_id.slice(-6)}</p>
                     </div>
-                    <p className="mt-1 flex items-center gap-1 text-sm text-ink-muted"><CalendarClock size={15}/>{new Date(s.start_time).toLocaleString()} · {s.duration_minutes} min</p>
-                    <p className="mt-1 text-xs text-ink-faint">First {s.late_after_minutes} minutes = Present window</p>
+                    <div className="flex shrink-0 gap-2">
+                      <button onClick={() => startNow(s.session_id)} className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white hover:opacity-90"><Play size={15}/> Start</button>
+                      <button onClick={() => cancel(s.session_id)} className="flex items-center gap-2 rounded-lg border border-line px-4 py-2.5 text-sm hover:bg-red-50 hover:text-red-600"><Trash2 size={15}/> Cancel</button>
+                    </div>
                   </div>
+                );
+              })}
 
-                  <div className="flex gap-2">
-                    <button onClick={() => startNow(s.session_id)} className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"><Play size={15}/> Start Session</button>
-                    <button onClick={() => cancel(s.session_id)} className="flex items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm hover:bg-red-50 hover:text-red-600"><Trash2 size={15}/> Cancel</button>
-                  </div>
-                </div>
-              ))}
-
-              {!sessions.length && <div className="px-6 py-12 text-center"><CalendarClock className="mx-auto text-ink-faint" size={30}/><p className="mt-3 text-sm text-ink-muted">No scheduled sessions.</p></div>}
+              {!sessions.length && <div className="px-6 py-14 text-center"><CalendarClock className="mx-auto text-ink-faint" size={32}/><p className="mt-3 text-sm font-medium">No scheduled sessions</p><p className="mt-1 text-xs text-ink-muted">Create one above to see it here.</p></div>}
             </div>
           </section>
         </main>
       </div>
     </div>
   );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-2xl border border-line bg-panel p-5 shadow-sm"><p className="text-xs uppercase tracking-wider text-ink-faint">{label}</p><p className="mt-2 text-2xl font-semibold">{value}</p></div>;
 }
