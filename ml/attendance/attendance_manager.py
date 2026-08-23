@@ -109,6 +109,21 @@ class AttendanceManager:
 
         return records
 
+    def get_history_for_student(self, student_id):
+        """
+        Returns every attendance record for one student, across all
+        dates. Used for a student's own attendance history/charts.
+        """
+
+        records = list(
+            self.collection.find({"student_id": student_id})
+        )
+
+        for record in records:
+            record.pop("_id", None)
+
+        return records
+
     def mark_absent(
         self,
         student_id,

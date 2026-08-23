@@ -3,14 +3,14 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
 # ============================================================
-# Add existing ml modules to the Python path
-# (none of these files are modified)
+# Add existing ml modules + backend services to the Python path
+# (none of the ml files are modified)
 # ============================================================
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -18,13 +18,24 @@ PROJECT_ROOT = CURRENT_DIR.parent
 
 ATTENDANCE_DIR = PROJECT_ROOT / "ml" / "attendance"
 RECOGNITION_DIR = PROJECT_ROOT / "ml" / "recognition"
+SERVICES_DIR = PROJECT_ROOT / "backend" / "services"
 
 sys.path.append(str(ATTENDANCE_DIR))
 sys.path.append(str(RECOGNITION_DIR))
+sys.path.append(str(SERVICES_DIR))
 
 from attendance_manager import AttendanceManager
 from database import FaceDatabase
 from session_manager import SessionManager
+
+from user_manager import UserManager
+from auth_utils import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    require_admin
+)
 
 
 # ============================================================
@@ -45,6 +56,7 @@ app.add_middleware(
 attendance_manager = AttendanceManager()
 face_database = FaceDatabase()
 session_manager = SessionManager()
+user_manager = UserManager()
 
 # ------------------------------------------------------------
 # Demo-only: lets a frontend button trigger the ML pipeline
@@ -59,8 +71,42 @@ PIPELINE_SCRIPT = PROJECT_ROOT / "ml" / "pipeline" / "attendance_pipeline.py"
 pipeline_process = None
 
 
+def _launch_pipeline_if_not_running():
+
+    global pipeline_process
+
+    if pipeline_process is None or pipeline_process.poll() is not None:
+
+        pipeline_process = subprocess.Popen(
+            [sys.executable, str(PIPELINE_SCRIPT)]
+        )
+
+
+def _build_summary(student_id):
+
+    records = attendance_manager.get_history_for_student(student_id)
+
+    total = len(records)
+    present = sum(1 for r in records if r["status"] == "Present")
+    late = sum(1 for r in records if r["status"] == "Late")
+    absent = sum(1 for r in records if r["status"] == "Absent")
+
+    attended = present + late
+
+    percentage = round((attended / total) * 100, 1) if total > 0 else 0
+
+    return {
+        "student_id": student_id,
+        "total_days": total,
+        "present": present,
+        "late": late,
+        "absent": absent,
+        "attendance_percentage": percentage
+    }
+
+
 # ============================================================
-# Health check
+# Health check (public — no login needed)
 # ============================================================
 
 @app.get("/health")
@@ -73,14 +119,115 @@ def health_check():
 
 
 # ============================================================
-# Attendance endpoints
+# Authentication
+# ============================================================
+
+class SignupRequest(BaseModel):
+    student_id: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/auth/signup")
+def signup(request: SignupRequest):
+    """
+    Student self-registration. Only works if the student_id
+    already has a registered face (via the desktop registration
+    script) — this links the login account to an actual, real
+    registered student, rather than letting anyone create an
+    account for any ID.
+    """
+
+    all_students = face_database.get_all()
+
+    if request.student_id not in all_students:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "This student ID isn't registered yet. "
+                "Register your face first, then sign up."
+            )
+        )
+
+    if len(request.password) < 6:
+
+        raise HTTPException(
+            status_code=422,
+            detail="Password must be at least 6 characters."
+        )
+
+    name = all_students[request.student_id]["name"]
+
+    password_hash = hash_password(request.password)
+
+    user = user_manager.create_user(
+        username=request.student_id,
+        password_hash=password_hash,
+        role="student",
+        student_id=request.student_id,
+        name=name
+    )
+
+    if user is None:
+
+        raise HTTPException(
+            status_code=409,
+            detail="An account for this student ID already exists."
+        )
+
+    return {
+        "success": True,
+        "username": request.student_id,
+        "name": name,
+        "role": "student"
+    }
+
+
+@app.post("/auth/login")
+def login(request: LoginRequest):
+    """
+    Works for both students (username = student_id) and admins
+    (username = whatever was set via scripts/create_admin.py).
+    """
+
+    user = user_manager.get_user(request.username)
+
+    if user is None or not verify_password(
+        request.password, user["password_hash"]
+    ):
+
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password."
+        )
+
+    token = create_access_token(
+        username=user["username"],
+        role=user["role"],
+        student_id=user.get("student_id"),
+        name=user.get("name")
+    )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "role": user["role"],
+        "name": user.get("name"),
+        "student_id": user.get("student_id")
+    }
+
+
+# ============================================================
+# Attendance endpoints (admin only — full class visibility)
 # ============================================================
 
 @app.get("/attendance/today")
-def get_today_attendance():
-    """
-    Returns today's attendance records as a list.
-    """
+def get_today_attendance(admin=Depends(require_admin)):
 
     records = attendance_manager.get_today_attendance()
 
@@ -90,10 +237,29 @@ def get_today_attendance():
     }
 
 
-@app.get("/attendance/{date}")
-def get_attendance_by_date(date: str):
+@app.get("/attendance/summary")
+def get_class_summary(admin=Depends(require_admin)):
     """
-    Returns attendance records for a specific date.
+    Class-wide Present/Late/Absent summary for every registered
+    student — powers admin dashboard charts.
+    """
+
+    all_students = face_database.get_all()
+
+    summaries = [
+        _build_summary(student_id)
+        for student_id in all_students.keys()
+    ]
+
+    return {
+        "count": len(summaries),
+        "summaries": summaries
+    }
+
+
+@app.get("/attendance/{date}")
+def get_attendance_by_date(date: str, admin=Depends(require_admin)):
+    """
     Date format: YYYY-MM-DD
     """
 
@@ -113,43 +279,11 @@ def get_attendance_by_date(date: str):
     }
 
 
-# ============================================================
-# Student / registered-face endpoints
-# ============================================================
-
-@app.get("/students")
-def get_all_students():
-    """
-    Returns all registered people (without their embeddings —
-    those are large arrays of numbers, not useful to a frontend).
-    """
-
-    people = face_database.get_all()
-
-    students = [
-        {
-            "student_id": student_id,
-            "name": person["name"]
-        }
-        for student_id, person in people.items()
-    ]
-
-    return {
-        "count": len(students),
-        "students": students
-    }
-
-
-# ============================================================
-# Absentee marking
-# ============================================================
-
 @app.post("/attendance/mark-absentees")
-def mark_absentees():
+def mark_absentees(admin=Depends(require_admin)):
     """
     Marks every registered student who wasn't already marked
-    Present today as Absent. Safe to call more than once — anyone
-    already recorded (Present or Absent) is left untouched.
+    Present/Late today as Absent. Safe to call more than once.
     """
 
     today = datetime.now().strftime("%Y-%m-%d")
@@ -184,17 +318,89 @@ def mark_absentees():
 
 
 # ============================================================
-# ML pipeline control (demo only — see note above)
+# Student roster (admin only)
+# ============================================================
+
+@app.get("/students")
+def get_all_students(admin=Depends(require_admin)):
+
+    people = face_database.get_all()
+
+    students = [
+        {"student_id": student_id, "name": person["name"]}
+        for student_id, person in people.items()
+    ]
+
+    return {
+        "count": len(students),
+        "students": students
+    }
+
+
+@app.get("/students/{student_id}/attendance")
+def get_student_attendance(student_id: str, admin=Depends(require_admin)):
+
+    records = attendance_manager.get_history_for_student(student_id)
+
+    return {
+        "student_id": student_id,
+        "count": len(records),
+        "records": records
+    }
+
+
+@app.get("/students/{student_id}/summary")
+def get_student_summary(student_id: str, admin=Depends(require_admin)):
+
+    return _build_summary(student_id)
+
+
+# ============================================================
+# "My" endpoints — a logged-in student's own data only.
+# Uses the student_id from their OWN token, never a
+# client-supplied id, so a student can never see anyone else's.
+# ============================================================
+
+@app.get("/me/attendance")
+def get_my_attendance(user=Depends(get_current_user)):
+
+    if user["role"] != "student":
+
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for student accounts only."
+        )
+
+    records = attendance_manager.get_history_for_student(
+        user["student_id"]
+    )
+
+    return {
+        "student_id": user["student_id"],
+        "count": len(records),
+        "records": records
+    }
+
+
+@app.get("/me/summary")
+def get_my_summary(user=Depends(get_current_user)):
+
+    if user["role"] != "student":
+
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint is for student accounts only."
+        )
+
+    return _build_summary(user["student_id"])
+
+
+# ============================================================
+# ML pipeline control (demo only — see note above). Admin only.
 # ============================================================
 
 @app.post("/pipeline/start")
-def start_pipeline():
-    """
-    Launches attendance_pipeline.py as a background process on
-    this machine. Opens a webcam window locally -- only useful
-    when this backend is running on the same computer as the
-    camera (e.g. during a live demo).
-    """
+def start_pipeline(admin=Depends(require_admin)):
 
     global pipeline_process
 
@@ -210,10 +416,7 @@ def start_pipeline():
 
 
 @app.post("/pipeline/stop")
-def stop_pipeline():
-    """
-    Terminates the running pipeline process, if any.
-    """
+def stop_pipeline(admin=Depends(require_admin)):
 
     global pipeline_process
 
@@ -227,10 +430,7 @@ def stop_pipeline():
 
 
 @app.get("/pipeline/status")
-def pipeline_status():
-    """
-    Reports whether the pipeline process is currently running.
-    """
+def pipeline_status(admin=Depends(require_admin)):
 
     running = (
         pipeline_process is not None
@@ -241,11 +441,7 @@ def pipeline_status():
 
 
 # ============================================================
-# Lecture sessions — Present vs Late is decided relative to
-# a session's start time, not just the calendar date.
-#
-# A session can be started immediately, or scheduled ahead of
-# time with a name and planned start time, then activated later.
+# Lecture sessions (admin only)
 # ============================================================
 
 class ScheduleSessionRequest(BaseModel):
@@ -261,24 +457,11 @@ class StartSessionRequest(BaseModel):
     late_after_minutes: int = 10
 
 
-def _launch_pipeline_if_not_running():
-
-    global pipeline_process
-
-    if pipeline_process is None or pipeline_process.poll() is not None:
-
-        pipeline_process = subprocess.Popen(
-            [sys.executable, str(PIPELINE_SCRIPT)]
-        )
-
-
 @app.post("/session/schedule")
-def schedule_session(request: ScheduleSessionRequest):
-    """
-    Creates a named, scheduled session for a future time. Does NOT
-    start the camera — it just sits as "scheduled" until activated
-    via /session/start/{session_id}.
-    """
+def schedule_session(
+    request: ScheduleSessionRequest,
+    admin=Depends(require_admin)
+):
 
     try:
         planned_time = datetime.fromisoformat(request.planned_start_time)
@@ -306,10 +489,7 @@ def schedule_session(request: ScheduleSessionRequest):
 
 
 @app.get("/session/scheduled")
-def list_scheduled_sessions():
-    """
-    Lists all sessions waiting to be started, soonest first.
-    """
+def list_scheduled_sessions(admin=Depends(require_admin)):
 
     sessions = session_manager.get_scheduled_sessions()
 
@@ -329,10 +509,10 @@ def list_scheduled_sessions():
 
 
 @app.delete("/session/scheduled/{session_id}")
-def cancel_scheduled_session(session_id: str):
-    """
-    Cancels a session that hasn't been started yet.
-    """
+def cancel_scheduled_session(
+    session_id: str,
+    admin=Depends(require_admin)
+):
 
     result = session_manager.cancel_session(session_id)
 
@@ -347,12 +527,10 @@ def cancel_scheduled_session(session_id: str):
 
 
 @app.post("/session/start")
-def start_session_now(request: StartSessionRequest = StartSessionRequest()):
-    """
-    Starts a brand new session immediately (no prior scheduling)
-    AND launches the camera pipeline — the quick "just start now"
-    path.
-    """
+def start_session_now(
+    request: StartSessionRequest = StartSessionRequest(),
+    admin=Depends(require_admin)
+):
 
     session = session_manager.create_session(
         name=request.name,
@@ -375,13 +553,10 @@ def start_session_now(request: StartSessionRequest = StartSessionRequest()):
 
 
 @app.post("/session/start/{session_id}")
-def start_scheduled_session(session_id: str):
-    """
-    Activates a previously scheduled session AND launches the
-    camera pipeline. Keeps the originally planned start_time as
-    the reference for Present/Late, even if clicked a bit early
-    or late.
-    """
+def start_scheduled_session(
+    session_id: str,
+    admin=Depends(require_admin)
+):
 
     result = session_manager.activate_session(session_id)
 
@@ -408,11 +583,7 @@ def start_scheduled_session(session_id: str):
 
 
 @app.post("/session/end")
-def end_session():
-    """
-    Ends the active lecture session, stops the camera pipeline,
-    and marks everyone who never showed up today as Absent.
-    """
+def end_session(admin=Depends(require_admin)):
 
     result = session_manager.end_session()
 
@@ -425,8 +596,7 @@ def end_session():
     if not result["success"]:
         return result
 
-    # Reuse the existing absentee sweep, scoped to today.
-    absentee_result = mark_absentees()
+    absentee_result = mark_absentees(admin=admin)
 
     session = result["session"]
 
@@ -441,12 +611,7 @@ def end_session():
 
 
 @app.get("/session/current")
-def get_current_session():
-    """
-    Returns info about the currently active session, if any --
-    including elapsed/remaining minutes, useful for a frontend
-    countdown display.
-    """
+def get_current_session(admin=Depends(require_admin)):
 
     session = session_manager.get_current_session()
 
