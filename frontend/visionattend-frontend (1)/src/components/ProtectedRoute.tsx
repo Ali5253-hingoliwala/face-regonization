@@ -7,19 +7,20 @@ interface ProtectedRouteProps {
   requiredRole?: "admin" | "student";
 }
 
-export default function ProtectedRoute({
-  children,
-  requiredRole,
-}: ProtectedRouteProps) {
-  const { isAuthenticated, role } = useAuth();
+export default function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
+  const { isAuthenticated, role, authReady } = useAuth();
+
+  // Do not redirect during the first render. AuthContext needs one tick
+  // to restore the token/role from localStorage after a full-page reload.
+  if (!authReady) {
+    return <div className="min-h-screen bg-bg" />;
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
   if (requiredRole && role !== requiredRole) {
-    // Logged in, but wrong role -- send them to their own
-    // dashboard instead of the one they tried to reach.
     return <Navigate to={role === "admin" ? "/admin" : "/student"} replace />;
   }
 
