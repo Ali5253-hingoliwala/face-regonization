@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CheckCircle2, Menu, Radio, Users, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, Menu, Users, XCircle } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import AdminSidebar from "../components/AdminSidebar";
@@ -41,9 +41,6 @@ export default function AdminDashboardPage() {
       setSession(currentSession);
       setPipelineRunning(Boolean(pipelineRes.data?.running));
 
-      // IMPORTANT: Do not use /attendance/today here.
-      // Without an active session there is no live attendance state,
-      // so old absent records must not appear as today's current absence.
       if (currentSession?.session_id) {
         const attendanceRes = await api.get(
           `/attendance/session/${currentSession.session_id}`
@@ -73,8 +70,6 @@ export default function AdminDashboardPage() {
     [records]
   );
 
-  // Absence is session-specific. Before a session is closed, students who
-  // have not appeared yet are simply "not recorded", not absent.
   const absent = session
     ? records.filter((r) => r.status?.toLowerCase() === "absent").length
     : 0;
