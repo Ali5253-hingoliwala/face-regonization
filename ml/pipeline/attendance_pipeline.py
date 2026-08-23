@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from datetime import datetime
 
 import cv2
 
@@ -22,11 +23,6 @@ sys.path.append(str(ANTI_SPOOFING_DIR))
 sys.path.append(str(ATTENDANCE_DIR))
 
 
-# ============================================================
-# Import existing, already-working classes
-# (none of these files are modified)
-# ============================================================
-
 from detector import FaceDetector
 from recognizer import FaceRecognizer
 from database import FaceDatabase
@@ -43,21 +39,9 @@ from session_manager import SessionManager
 # ============================================================
 
 RECOGNITION_THRESHOLD = 0.45
-
-# Only re-run YOLO detection every N frames too. The bounding box
-# holds its last position for a frame or two in between -- barely
-# noticeable, and it means YOLO isn't run at all on most frames.
-# Note: blink/head-pose/gaze detection is NOT affected by this --
-# that runs on the raw frame every single frame regardless, so
-# liveness responsiveness stays fast no matter what this is set to.
 DETECTION_INTERVAL = 2
-
-# Only re-run InsightFace recognition every N frames instead of
-# every single frame. YOLO still detects every frame so the box
-# stays smooth; only the "who is this" check runs less often.
-# Safe for a stationary checkpoint (one person standing to be
-# verified), not meant for tracking multiple moving people.
 RECOGNITION_INTERVAL = 5
+WINDOW_NAME = "VisionAttend AI - Main Pipeline"
 
 
 def bbox_area(bbox):
@@ -68,7 +52,7 @@ def bbox_area(bbox):
 
 
 # ============================================================
-# Helper — match a YOLO detection to an InsightFace face
+# Helper — match YOLO detection to InsightFace face
 # ============================================================
 
 def match_yolo_to_insightface(yolo_bbox, recognized_faces):
@@ -83,10 +67,61 @@ def match_yolo_to_insightface(yolo_bbox, recognized_faces):
         rx1, ry1, rx2, ry2 = map(int, r_face.bbox)
 
         if rx1 <= center_x <= rx2 and ry1 <= center_y <= ry2:
-
             return r_face
 
     return None
+
+
+# ============================================================
+# Close the active session cleanly
+# ============================================================
+
+def close_session_and_mark_absentees(
+    session_manager,
+    attendance,
+    face_db,
+    session
+):
+
+    if session is None:
+        return
+
+    session_id = session["session_id"]
+    session_date = session["start_time"].strftime("%Y-%m-%d")
+
+    print("\n[SESSION] Closing session...")
+
+    # Close only this session.
+    result = session_manager.end_session(session_id)
+
+    if not result["success"]:
+        print(f"[SESSION] {result.get('message', 'Session already closed.')}")
+
+    existing = attendance.get_by_session(session_id)
+    all_students = face_db.get_all()
+
+    marked_absent = 0
+
+    for student_id, person in all_students.items():
+
+        if student_id in existing:
+            continue
+
+        absent_result = attendance.mark_absent(
+            student_id=student_id,
+            name=person["name"],
+            date=session_date,
+            session_id=session_id
+        )
+
+        if absent_result["success"]:
+            marked_absent += 1
+
+    print(
+        f"[SESSION] Marked {marked_absent} student(s) absent."
+    )
+
+    print("[SESSION] Session closed successfully.")
 
 
 # ============================================================
@@ -100,103 +135,84 @@ def main():
     print("          MAIN ATTENDANCE PIPELINE")
     print("=" * 60)
 
-    # --------------------------------------------------------
-    # Face detection (YOLO)
-    # --------------------------------------------------------
-
     print("\nLoading YOLO face detector...")
-
     detector = FaceDetector(confidence=0.50)
-
     print("YOLO detector ready.")
 
-    # --------------------------------------------------------
-    # Face recognition (InsightFace)
-    # --------------------------------------------------------
-
     recognizer = FaceRecognizer()
-
     print("Recognition system ready.")
 
-    # --------------------------------------------------------
-    # Real registered-face database (fixes the empty-DATABASE bug)
-    # --------------------------------------------------------
-
     face_db = FaceDatabase()
-
     DATABASE = face_db.get_all()
 
     print(f"Registered people: {len(DATABASE)}")
 
     if len(DATABASE) == 0:
-        print("WARNING: No registered faces found. Everyone will show as UNKNOWN.")
-
-    # --------------------------------------------------------
-    # Anti-spoofing — single shared landmarker (see fast_liveness.py)
-    # --------------------------------------------------------
+        print(
+            "WARNING: No registered faces found. "
+            "Everyone will show as UNKNOWN."
+        )
 
     print("\nLoading anti-spoofing models...")
-
     liveness_signals = FastLivenessSignals()
-
     print("Anti-spoofing ready.")
 
-    # --------------------------------------------------------
-    # Attendance manager (unchanged, already handles duplicates)
-    # --------------------------------------------------------
-
     attendance = AttendanceManager()
-
-    # Fetch today's attendance ONCE at startup instead of querying
-    # the database every frame — important now that the database is
-    # a network call (MongoDB Atlas), not a local file.
-    today_attendance_cache = attendance.get_today_attendance()
-
-    # --------------------------------------------------------
-    # Lecture session (Present vs Late is decided relative to
-    # this session's start time, not just "today")
-    # --------------------------------------------------------
-
     session_manager = SessionManager()
+
+    # --------------------------------------------------------
+    # The pipeline MUST belong to one active lecture session.
+    # --------------------------------------------------------
+
     current_session = session_manager.get_current_session()
 
-    if current_session is not None:
+    if current_session is None:
+        print("\nERROR: No active lecture session.")
+        print("Start a session from the admin portal first.")
+        liveness_signals.close()
+        return
 
-        print(
-            f"\nActive lecture session found — started at "
-            f"{current_session['start_time'].strftime('%H:%M:%S')}, "
-            f"{current_session['duration_minutes']} min duration, "
-            f"late after {current_session['late_after_minutes']} min."
-        )
+    SESSION_ID = current_session["session_id"]
 
-    else:
+    print(
+        f"\nActive session: {current_session['name']}"
+    )
+    print(f"Session ID: {SESSION_ID}")
+    print(
+        f"Started: {current_session['start_time'].strftime('%H:%M:%S')}"
+    )
+    print(
+        f"Duration: {current_session['duration_minutes']} minutes"
+    )
+    print(
+        f"Late after: {current_session['late_after_minutes']} minutes"
+    )
 
-        print(
-            "\nNo active lecture session — everyone recognized will "
-            "be marked Present (no Late distinction without a session)."
-        )
+    # Attendance is now session-based.
+    # A student can attend another session on the same day.
+    session_attendance_cache = attendance.get_by_session(
+        SESSION_ID
+    )
 
-    # One LivenessDetector per recognized student_id, created on
-    # first sight and dropped once they pass or once already marked.
+    print(
+        f"Existing attendance in this session: "
+        f"{len(session_attendance_cache)}"
+    )
+
     liveness_controllers = {}
-
-    # --------------------------------------------------------
-    # Camera
-    # --------------------------------------------------------
 
     cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
         print("ERROR: Could not open webcam.")
+        liveness_signals.close()
         return
 
-    # Lower capture resolution -> less work per frame for every
-    # downstream model (YOLO, InsightFace, landmarker).
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     print("\nCamera started.")
-    print("Press Q to exit.\n")
+    print("Camera is controlled by the active session — no Q exit.\n")
 
     frame_count = 0
     cached_match = None
@@ -204,12 +220,42 @@ def main():
 
     spoof_detected = False
     spoof_name = None
+    manual_window_close = False
+    session_finished = False
 
     # --------------------------------------------------------
     # Main loop
     # --------------------------------------------------------
 
     while True:
+
+        # ----------------------------------------------------
+        # SESSION TIME CHECK
+        # ----------------------------------------------------
+
+        current_time = datetime.now()
+
+        elapsed_seconds = (
+            current_time - current_session["start_time"]
+        ).total_seconds()
+
+        session_duration_seconds = (
+            current_session["duration_minutes"] * 60
+        )
+
+        if elapsed_seconds >= session_duration_seconds:
+
+            print("\n[SESSION] Session duration completed.")
+
+            close_session_and_mark_absentees(
+                session_manager,
+                attendance,
+                face_db,
+                current_session
+            )
+
+            session_finished = True
+            break
 
         ret, frame = cap.read()
 
@@ -218,9 +264,7 @@ def main():
             break
 
         # ----------------------------------------------------
-        # STEP 1 — Face detection (throttled — see DETECTION_INTERVAL.
-        # Liveness signals below run every frame regardless, since
-        # they process the raw frame directly, not YOLO's box.)
+        # STEP 1 — Face detection
         # ----------------------------------------------------
 
         if frame_count % DETECTION_INTERVAL == 0 or not cached_faces:
@@ -229,9 +273,7 @@ def main():
         faces = cached_faces
 
         # ----------------------------------------------------
-        # STEP 2 — Recognition (only every RECOGNITION_INTERVAL
-        # frames — this is the expensive step, so we don't run
-        # it every single frame)
+        # STEP 2 — Recognition
         # ----------------------------------------------------
 
         if not faces:
@@ -249,7 +291,10 @@ def main():
 
                 recognized_faces = recognizer.get_faces(frame)
 
-                primary_face = max(faces, key=lambda f: bbox_area(f["bbox"]))
+                primary_face = max(
+                    faces,
+                    key=lambda f: bbox_area(f["bbox"])
+                )
 
                 r_face = match_yolo_to_insightface(
                     primary_face["bbox"],
@@ -265,27 +310,30 @@ def main():
                     )
 
                 else:
-
                     cached_match = None
 
         frame_count += 1
 
         # ----------------------------------------------------
-        # STEP 3 — Build results: cached identity applies to the
-        # current largest ("primary") box; any other faces in
-        # frame show as unknown (this pipeline is designed for a
-        # one-person-at-a-time checkpoint, not crowd tracking).
+        # STEP 3 — Build results
         # ----------------------------------------------------
 
         face_results = []
 
         if faces:
 
-            primary_face = max(faces, key=lambda f: bbox_area(f["bbox"]))
+            primary_face = max(
+                faces,
+                key=lambda f: bbox_area(f["bbox"])
+            )
 
             for face in faces:
 
-                match = cached_match if face is primary_face else None
+                match = (
+                    cached_match
+                    if face is primary_face
+                    else None
+                )
 
                 face_results.append({
                     "bbox": face["bbox"],
@@ -294,12 +342,12 @@ def main():
 
         # ----------------------------------------------------
         # STEP 4 — Anti-spoofing + liveness + attendance
-        #
-        # Anti-spoofing models run once per frame (num_faces=1),
-        # so they apply to the largest KNOWN face in view.
         # ----------------------------------------------------
 
-        known_results = [f for f in face_results if f["match"] is not None]
+        known_results = [
+            f for f in face_results
+            if f["match"] is not None
+        ]
 
         status_lines = []
 
@@ -317,10 +365,11 @@ def main():
             name = primary["match"]["name"]
             score = primary["match"]["score"]
 
-            if student_id in today_attendance_cache:
+            if student_id in session_attendance_cache:
 
-                # Already marked today — skip anti-spoofing work.
-                status_lines.append(f"{name}: PRESENT (already marked)")
+                status_lines.append(
+                    f"{name}: PRESENT (already marked)"
+                )
 
                 liveness_controllers.pop(student_id, None)
 
@@ -339,45 +388,47 @@ def main():
                     gaze=signals["gaze"]
                 )
 
-                gaze_text = signals["gaze"] if signals["gaze"] else "N/A"
+                gaze_text = (
+                    signals["gaze"]
+                    if signals["gaze"]
+                    else "N/A"
+                )
 
                 if live_status == "POSSIBLE PHOTO - NO MOVEMENT DETECTED":
+
                     status_lines.append(
-                        f"⚠ {name}: POSSIBLE PHOTO — please move/blink naturally"
+                        f"WARNING {name}: POSSIBLE PHOTO"
                     )
+
                     spoof_detected = True
                     spoof_name = name
+
                 else:
-                    status_lines.append(f"{name}: {live_status}  (gaze: {gaze_text})")
+
+                    status_lines.append(
+                        f"{name}: {live_status} "
+                        f"(gaze: {gaze_text})"
+                    )
 
                 # ------------------------------------------------
-                # LIVE -> mark attendance (Present or Late,
-                # depending on the active lecture session)
+                # LIVE -> mark attendance for THIS SESSION
                 # ------------------------------------------------
 
                 if live_status == "LIVE":
 
-                    if current_session is not None:
+                    attendance_status = session_manager.get_status_for_time(
+                        current_session
+                    )
 
-                        attendance_status = session_manager.get_status_for_time(
-                            current_session
-                        )
-
-                    else:
-
-                        attendance_status = "Present"
-
-                    # None means the session's full duration has
-                    # already elapsed — too late even for "Late".
-                    # Leave them unmarked; the end-of-session
-                    # absentee sweep will catch them as Absent.
+                    # None means the session has already elapsed.
                     if attendance_status is not None:
 
                         result = attendance.mark_attendance(
                             student_id=student_id,
                             name=name,
                             confidence=score,
-                            status=attendance_status
+                            status=attendance_status,
+                            session_id=SESSION_ID
                         )
 
                         if result["success"]:
@@ -385,19 +436,21 @@ def main():
                             print(
                                 f"[ATTENDANCE] {name} marked "
                                 f"{attendance_status.upper()} "
+                                f"for session {SESSION_ID} "
                                 f"({score * 100:.1f}%)"
                             )
 
-                            # Update the cache locally — this is the
-                            # ONLY place attendance data changes during
-                            # the session, so no need to re-query the
-                            # database.
-                            today_attendance_cache[student_id] = result["record"]
+                            session_attendance_cache[
+                                student_id
+                            ] = result["record"]
 
-                    liveness_controllers.pop(student_id, None)
+                    liveness_controllers.pop(
+                        student_id,
+                        None
+                    )
 
         # ----------------------------------------------------
-        # Draw all face boxes
+        # Draw face boxes
         # ----------------------------------------------------
 
         for f in face_results:
@@ -407,7 +460,10 @@ def main():
 
             if match is not None:
 
-                label = f"{match['name']} ({match['score']:.2f})"
+                label = (
+                    f"{match['name']} "
+                    f"({match['score']:.2f})"
+                )
                 box_color = (0, 255, 0)
 
             else:
@@ -415,7 +471,13 @@ def main():
                 label = "UNKNOWN"
                 box_color = (0, 0, 255)
 
-            cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+            cv2.rectangle(
+                frame,
+                (x1, y1),
+                (x2, y2),
+                box_color,
+                2
+            )
 
             cv2.putText(
                 frame,
@@ -428,8 +490,16 @@ def main():
             )
 
         # ----------------------------------------------------
-        # HUD: face count + liveness/attendance status
+        # HUD
         # ----------------------------------------------------
+
+        remaining_seconds = max(
+            0,
+            int(session_duration_seconds - elapsed_seconds)
+        )
+
+        remaining_minutes = remaining_seconds // 60
+        remaining_secs = remaining_seconds % 60
 
         cv2.putText(
             frame,
@@ -441,7 +511,17 @@ def main():
             2
         )
 
-        y_offset = 60
+        cv2.putText(
+            frame,
+            f"Session: {remaining_minutes:02d}:{remaining_secs:02d}",
+            (20, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 0),
+            2
+        )
+
+        y_offset = 90
 
         for line in status_lines:
 
@@ -457,19 +537,8 @@ def main():
 
             y_offset += 30
 
-        cv2.putText(
-            frame,
-            "Press Q to exit",
-            (20, frame.shape[0] - 20),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (255, 255, 255),
-            2
-        )
-
         # ----------------------------------------------------
-        # Fake photo detected — show a clear warning overlay,
-        # then automatically close the camera.
+        # Fake photo detected
         # ----------------------------------------------------
 
         if spoof_detected:
@@ -484,7 +553,13 @@ def main():
                 -1
             )
 
-            frame = cv2.addWeighted(overlay, 0.5, frame, 0.5, 0)
+            frame = cv2.addWeighted(
+                overlay,
+                0.5,
+                frame,
+                0.5,
+                0
+            )
 
             cv2.putText(
                 frame,
@@ -498,7 +573,7 @@ def main():
 
             cv2.putText(
                 frame,
-                f"({spoof_name}) — closing camera...",
+                f"({spoof_name}) - closing session...",
                 (30, frame.shape[0] // 2 + 15),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.8,
@@ -510,28 +585,64 @@ def main():
         # Display
         # ----------------------------------------------------
 
-        cv2.imshow("VisionAttend AI - Main Pipeline", frame)
+        cv2.imshow(WINDOW_NAME, frame)
+
+        # No Q exit.
+        # If the OpenCV window is closed using its X button,
+        # treat that as a session stop so the frontend and Atlas
+        # never remain stuck in ACTIVE state.
+        try:
+
+            window_visible = cv2.getWindowProperty(
+                WINDOW_NAME,
+                cv2.WND_PROP_VISIBLE
+            )
+
+            if window_visible < 1:
+
+                print(
+                    "\n[SESSION] Camera window closed manually."
+                )
+
+                manual_window_close = True
+                break
+
+        except cv2.error:
+
+            manual_window_close = True
+            break
 
         if spoof_detected:
 
             print(
-                f"\n[SECURITY] Fake/duplicate photo detected for "
-                f"{spoof_name}. Closing camera automatically."
+                f"\n[SECURITY] Fake/duplicate photo detected "
+                f"for {spoof_name}."
             )
 
             cv2.waitKey(2500)
             break
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
+        cv2.waitKey(1)
 
     # --------------------------------------------------------
-    # Cleanup
+    # Cleanup and synchronization
     # --------------------------------------------------------
 
     cap.release()
     cv2.destroyAllWindows()
     liveness_signals.close()
+
+    # If the session did not already close because of normal
+    # expiry or fake-photo detection, close it here. This covers
+    # manual camera-window closure and unexpected loop exits.
+    if not session_finished:
+
+        close_session_and_mark_absentees(
+            session_manager,
+            attendance,
+            face_db,
+            current_session
+        )
 
     print("\nVisionAttend AI stopped.")
 
