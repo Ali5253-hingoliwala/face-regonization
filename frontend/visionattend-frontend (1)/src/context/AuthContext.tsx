@@ -13,6 +13,7 @@ interface AuthState {
 
 interface AuthContextValue extends AuthState {
   isAuthenticated: boolean;
+  authReady: boolean;
   login: (username: string, password: string) => Promise<Role>;
   signup: (studentId: string, password: string) => Promise<void>;
   logout: () => void;
@@ -27,8 +28,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     name: null,
     studentId: null,
   });
+  const [authReady, setAuthReady] = useState(false);
 
-  // Restore session on page load/refresh.
+  // Restore local authentication before ProtectedRoute is allowed to redirect.
   useEffect(() => {
     const token = localStorage.getItem("va_token");
     const role = localStorage.getItem("va_role") as Role | null;
@@ -38,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token && role) {
       setState({ token, role, name, studentId });
     }
+
+    setAuthReady(true);
   }, []);
 
   async function login(username: string, password: string): Promise<Role> {
@@ -76,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         ...state,
         isAuthenticated: !!state.token,
+        authReady,
         login,
         signup,
         logout,
