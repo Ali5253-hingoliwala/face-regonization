@@ -20,18 +20,27 @@ class SessionManager:
 
     def create_session(self, name=None, planned_start_time=None, duration_minutes=45, late_after_minutes=10):
         is_immediate = planned_start_time is None
-        start_time = datetime.now() if is_immediate else planned_start_time
+        now = datetime.now()
+        start_time = now if is_immediate else planned_start_time
+        clean_name = (name or "").strip() or "Untitled Session"
 
         if is_immediate:
-            self.collection.update_many({"status": "active"}, {"$set": {"status": "closed"}})
+            self.collection.update_many(
+                {"status": "active"},
+                {"$set": {"status": "closed", "ended_at": now}}
+            )
 
         session_doc = {
-            "name": name or "Untitled Session",
+            "name": clean_name,
             "start_time": start_time,
+            "planned_start_time": planned_start_time or start_time,
             "duration_minutes": duration_minutes,
             "late_after_minutes": late_after_minutes,
             "status": "active" if is_immediate else "scheduled"
         }
+
+        if is_immediate:
+            session_doc["activated_at"] = now
 
         result = self.collection.insert_one(session_doc)
         return self._to_public(session_doc, result.inserted_id)
@@ -52,8 +61,12 @@ class SessionManager:
         if doc["status"] != "scheduled":
             return {"success": False, "message": "Session is no longer schedulable."}
 
-        self.collection.update_many({"status": "active"}, {"$set": {"status": "closed"}})
         now = datetime.now()
+        self.collection.update_many(
+            {"status": "active"},
+            {"$set": {"status": "closed", "ended_at": now}}
+        )
+
         self.collection.update_one(
             {"_id": object_id},
             {"$set": {"status": "active", "activated_at": now, "start_time": now}}
@@ -100,7 +113,7 @@ class SessionManager:
         return None if doc is None else self._to_public(doc, doc["_id"])
 
     def get_scheduled_sessions(self):
-        docs = self.collection.find({"status": "scheduled"}).sort("start_time", 1)
+        docs = self.collection.find({"status": "scheduled"}).sort("planned_start_time", 1)
         return [self._to_public(doc, doc["_id"]) for doc in docs]
 
     def get_session_history(self, limit=100):
@@ -118,12 +131,15 @@ class SessionManager:
         return None
 
     def _to_public(self, doc, object_id):
+        planned = doc.get("planned_start_time") or doc.get("start_time")
         return {
             "session_id": str(object_id),
             "name": doc.get("name", "Untitled Session"),
             "start_time": doc["start_time"],
+            "planned_start_time": planned,
             "duration_minutes": doc["duration_minutes"],
             "late_after_minutes": doc["late_after_minutes"],
             "status": doc["status"],
+            "activated_at": doc.get("activated_at").isoformat() if doc.get("activated_at") else None,
             "ended_at": doc.get("ended_at").isoformat() if doc.get("ended_at") else None,
         }
