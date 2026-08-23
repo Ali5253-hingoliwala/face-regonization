@@ -9,8 +9,7 @@ from pydantic import BaseModel
 
 
 # ============================================================
-# Add existing ml modules + backend services to the Python path
-# (none of the ml files are modified)
+# Project paths
 # ============================================================
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -44,8 +43,6 @@ from auth_utils import (
 
 app = FastAPI(title="VisionAttend AI API")
 
-# Allow a frontend running on a different port (e.g. React on
-# :3000 or :5173) to call this API from the browser.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -58,45 +55,153 @@ face_database = FaceDatabase()
 session_manager = SessionManager()
 user_manager = UserManager()
 
-# ------------------------------------------------------------
-# Demo-only: lets a frontend button trigger the ML pipeline
-# (opens the local webcam window). This only works because the
-# backend is running on the SAME machine as the webcam -- once
-# this backend is deployed to a real cloud server later, this
-# has no camera to open and should be removed/disabled.
-# ------------------------------------------------------------
-
-PIPELINE_SCRIPT = PROJECT_ROOT / "ml" / "pipeline" / "attendance_pipeline.py"
+PIPELINE_SCRIPT = (
+    PROJECT_ROOT / "ml" / "pipeline" / "attendance_pipeline.py"
+)
 
 pipeline_process = None
 
+
+# ============================================================
+# Pipeline/session synchronization helpers
+# ============================================================
 
 def _launch_pipeline_if_not_running():
 
     global pipeline_process
 
-    if pipeline_process is None or pipeline_process.poll() is not None:
+    if (
+        pipeline_process is None
+        or pipeline_process.poll() is not None
+    ):
 
         pipeline_process = subprocess.Popen(
             [sys.executable, str(PIPELINE_SCRIPT)]
         )
 
+        return True
+
+    return False
+
+
+def _mark_session_absentees(session):
+    """Mark only students missing from this exact session as absent."""
+
+    if session is None:
+        return []
+
+    session_id = session["session_id"]
+    session_date = session["start_time"].strftime("%Y-%m-%d")
+
+    existing = attendance_manager.get_by_session(
+        session_id
+    )
+
+    all_students = face_database.get_all()
+
+    marked_absent = []
+
+    for student_id, person in all_students.items():
+
+        if student_id in existing:
+            continue
+
+        result = attendance_manager.mark_absent(
+            student_id=student_id,
+            name=person["name"],
+            date=session_date,
+            session_id=session_id
+        )
+
+        if result["success"]:
+            marked_absent.append(student_id)
+
+    return marked_absent
+
+
+def _close_session_and_pipeline(session=None):
+    """Close one session, mark its absentees, and stop the process."""
+
+    global pipeline_process
+
+    if session is None:
+        session = session_manager.get_current_session()
+
+    if session is not None:
+        _mark_session_absentees(session)
+        session_manager.end_session(
+            session["session_id"]
+        )
+
+    if (
+        pipeline_process is not None
+        and pipeline_process.poll() is None
+    ):
+        pipeline_process.terminate()
+
+
+def _synchronize_dead_pipeline():
+    """
+    Safety net: if the ML subprocess dies unexpectedly while its
+    session is still active, close that session and mark absentees.
+    Normal ML exits already close the session themselves, so this
+    is only a crash/desync fallback.
+    """
+
+    global pipeline_process
+
+    if pipeline_process is None:
+        return
+
+    if pipeline_process.poll() is None:
+        return
+
+    session = session_manager.get_current_session()
+
+    if session is not None:
+        print(
+            "[SYNC] ML pipeline stopped unexpectedly. "
+            "Closing active session."
+        )
+        _close_session_and_pipeline(session)
+
+    pipeline_process = None
+
 
 def _build_summary(student_id):
 
-    records = attendance_manager.get_history_for_student(student_id)
+    records = attendance_manager.get_history_for_student(
+        student_id
+    )
 
     total = len(records)
-    present = sum(1 for r in records if r["status"] == "Present")
-    late = sum(1 for r in records if r["status"] == "Late")
-    absent = sum(1 for r in records if r["status"] == "Absent")
+
+    present = sum(
+        1 for r in records
+        if r.get("status") == "Present"
+    )
+
+    late = sum(
+        1 for r in records
+        if r.get("status") == "Late"
+    )
+
+    absent = sum(
+        1 for r in records
+        if r.get("status") == "Absent"
+    )
 
     attended = present + late
 
-    percentage = round((attended / total) * 100, 1) if total > 0 else 0
+    percentage = (
+        round((attended / total) * 100, 1)
+        if total > 0
+        else 0
+    )
 
     return {
         "student_id": student_id,
+        "total_sessions": total,
         "total_days": total,
         "present": present,
         "late": late,
@@ -106,7 +211,7 @@ def _build_summary(student_id):
 
 
 # ============================================================
-# Health check (public — no login needed)
+# Health
 # ============================================================
 
 @app.get("/health")
@@ -134,18 +239,10 @@ class LoginRequest(BaseModel):
 
 @app.post("/auth/signup")
 def signup(request: SignupRequest):
-    """
-    Student self-registration. Only works if the student_id
-    already has a registered face (via the desktop registration
-    script) — this links the login account to an actual, real
-    registered student, rather than letting anyone create an
-    account for any ID.
-    """
 
     all_students = face_database.get_all()
 
     if request.student_id not in all_students:
-
         raise HTTPException(
             status_code=404,
             detail=(
@@ -155,7 +252,6 @@ def signup(request: SignupRequest):
         )
 
     if len(request.password) < 6:
-
         raise HTTPException(
             status_code=422,
             detail="Password must be at least 6 characters."
@@ -163,18 +259,15 @@ def signup(request: SignupRequest):
 
     name = all_students[request.student_id]["name"]
 
-    password_hash = hash_password(request.password)
-
     user = user_manager.create_user(
         username=request.student_id,
-        password_hash=password_hash,
+        password_hash=hash_password(request.password),
         role="student",
         student_id=request.student_id,
         name=name
     )
 
     if user is None:
-
         raise HTTPException(
             status_code=409,
             detail="An account for this student ID already exists."
@@ -190,17 +283,13 @@ def signup(request: SignupRequest):
 
 @app.post("/auth/login")
 def login(request: LoginRequest):
-    """
-    Works for both students (username = student_id) and admins
-    (username = whatever was set via scripts/create_admin.py).
-    """
 
     user = user_manager.get_user(request.username)
 
     if user is None or not verify_password(
-        request.password, user["password_hash"]
+        request.password,
+        user["password_hash"]
     ):
-
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password."
@@ -223,11 +312,13 @@ def login(request: LoginRequest):
 
 
 # ============================================================
-# Attendance endpoints (admin only — full class visibility)
+# Attendance — admin
 # ============================================================
 
 @app.get("/attendance/today")
-def get_today_attendance(admin=Depends(require_admin)):
+def get_today_attendance(
+    admin=Depends(require_admin)
+):
 
     records = attendance_manager.get_today_attendance()
 
@@ -237,12 +328,27 @@ def get_today_attendance(admin=Depends(require_admin)):
     }
 
 
+@app.get("/attendance/session/{session_id}")
+def get_session_attendance(
+    session_id: str,
+    admin=Depends(require_admin)
+):
+
+    records = attendance_manager.get_by_session(
+        session_id
+    )
+
+    return {
+        "session_id": session_id,
+        "count": len(records),
+        "records": list(records.values())
+    }
+
+
 @app.get("/attendance/summary")
-def get_class_summary(admin=Depends(require_admin)):
-    """
-    Class-wide Present/Late/Absent summary for every registered
-    student — powers admin dashboard charts.
-    """
+def get_class_summary(
+    admin=Depends(require_admin)
+):
 
     all_students = face_database.get_all()
 
@@ -258,15 +364,14 @@ def get_class_summary(admin=Depends(require_admin)):
 
 
 @app.get("/attendance/{date}")
-def get_attendance_by_date(date: str, admin=Depends(require_admin)):
-    """
-    Date format: YYYY-MM-DD
-    """
+def get_attendance_by_date(
+    date: str,
+    admin=Depends(require_admin)
+):
 
     records = attendance_manager.get_by_date(date)
 
     if not records:
-
         raise HTTPException(
             status_code=404,
             detail=f"No attendance records found for {date}"
@@ -280,54 +385,48 @@ def get_attendance_by_date(date: str, admin=Depends(require_admin)):
 
 
 @app.post("/attendance/mark-absentees")
-def mark_absentees(admin=Depends(require_admin)):
+def mark_absentees(
+    admin=Depends(require_admin)
+):
     """
-    Marks every registered student who wasn't already marked
-    Present/Late today as Absent. Safe to call more than once.
+    Marks absentees only for the CURRENT ACTIVE SESSION.
+    If there is no active session, nothing is written to Atlas.
     """
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    session = session_manager.get_current_session()
 
-    all_students = face_database.get_all()
-    present_today = attendance_manager.get_by_date(today)
-
-    marked_absent = []
-    already_recorded = []
-
-    for student_id, person in all_students.items():
-
-        if student_id in present_today:
-
-            already_recorded.append(student_id)
-            continue
-
-        result = attendance_manager.mark_absent(
-            student_id=student_id,
-            name=person["name"],
-            date=today
+    if session is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No active session. No absences were created."
         )
 
-        if result["success"]:
-            marked_absent.append(student_id)
+    marked_absent = _mark_session_absentees(session)
 
     return {
-        "date": today,
+        "session_id": session["session_id"],
+        "date": session["start_time"].strftime("%Y-%m-%d"),
         "marked_absent": marked_absent,
-        "already_recorded_count": len(already_recorded)
+        "count": len(marked_absent)
     }
 
 
 # ============================================================
-# Student roster (admin only)
+# Students
 # ============================================================
 
 @app.get("/students")
-def get_all_students(admin=Depends(require_admin)):
+def get_all_students(
+    admin=Depends(require_admin)
+):
 
     people = face_database.get_all()
 
     students = [
-        {"student_id": student_id, "name": person["name"]}
+        {
+            "student_id": student_id,
+            "name": person["name"]
+        }
         for student_id, person in people.items()
     ]
 
@@ -338,9 +437,14 @@ def get_all_students(admin=Depends(require_admin)):
 
 
 @app.get("/students/{student_id}/attendance")
-def get_student_attendance(student_id: str, admin=Depends(require_admin)):
+def get_student_attendance(
+    student_id: str,
+    admin=Depends(require_admin)
+):
 
-    records = attendance_manager.get_history_for_student(student_id)
+    records = attendance_manager.get_history_for_student(
+        student_id
+    )
 
     return {
         "student_id": student_id,
@@ -350,22 +454,24 @@ def get_student_attendance(student_id: str, admin=Depends(require_admin)):
 
 
 @app.get("/students/{student_id}/summary")
-def get_student_summary(student_id: str, admin=Depends(require_admin)):
+def get_student_summary(
+    student_id: str,
+    admin=Depends(require_admin)
+):
 
     return _build_summary(student_id)
 
 
 # ============================================================
-# "My" endpoints — a logged-in student's own data only.
-# Uses the student_id from their OWN token, never a
-# client-supplied id, so a student can never see anyone else's.
+# Student self-service
 # ============================================================
 
 @app.get("/me/attendance")
-def get_my_attendance(user=Depends(get_current_user)):
+def get_my_attendance(
+    user=Depends(get_current_user)
+):
 
     if user["role"] != "student":
-
         raise HTTPException(
             status_code=403,
             detail="This endpoint is for student accounts only."
@@ -383,10 +489,11 @@ def get_my_attendance(user=Depends(get_current_user)):
 
 
 @app.get("/me/summary")
-def get_my_summary(user=Depends(get_current_user)):
+def get_my_summary(
+    user=Depends(get_current_user)
+):
 
     if user["role"] != "student":
-
         raise HTTPException(
             status_code=403,
             detail="This endpoint is for student accounts only."
@@ -396,41 +503,49 @@ def get_my_summary(user=Depends(get_current_user)):
 
 
 # ============================================================
-# ML pipeline control (demo only — see note above). Admin only.
+# Pipeline control
 # ============================================================
 
 @app.post("/pipeline/start")
-def start_pipeline(admin=Depends(require_admin)):
+def start_pipeline(
+    admin=Depends(require_admin)
+):
 
-    global pipeline_process
+    started = _launch_pipeline_if_not_running()
 
-    if pipeline_process is not None and pipeline_process.poll() is None:
-
+    if not started:
         return {"status": "already_running"}
 
-    pipeline_process = subprocess.Popen(
-        [sys.executable, str(PIPELINE_SCRIPT)]
-    )
-
-    return {"status": "started", "pid": pipeline_process.pid}
+    return {
+        "status": "started",
+        "pid": pipeline_process.pid
+    }
 
 
 @app.post("/pipeline/stop")
-def stop_pipeline(admin=Depends(require_admin)):
+def stop_pipeline(
+    admin=Depends(require_admin)
+):
 
-    global pipeline_process
+    session = session_manager.get_current_session()
 
-    if pipeline_process is not None and pipeline_process.poll() is None:
+    if session is None:
+        return {"status": "not_running"}
 
-        pipeline_process.terminate()
+    _close_session_and_pipeline(session)
 
-        return {"status": "stopped"}
-
-    return {"status": "not_running"}
+    return {
+        "status": "stopped",
+        "session_id": session["session_id"]
+    }
 
 
 @app.get("/pipeline/status")
-def pipeline_status(admin=Depends(require_admin)):
+def pipeline_status(
+    admin=Depends(require_admin)
+):
+
+    _synchronize_dead_pipeline()
 
     running = (
         pipeline_process is not None
@@ -441,12 +556,12 @@ def pipeline_status(admin=Depends(require_admin)):
 
 
 # ============================================================
-# Lecture sessions (admin only)
+# Lecture sessions
 # ============================================================
 
 class ScheduleSessionRequest(BaseModel):
     name: str
-    planned_start_time: str  # ISO 8601, e.g. "2026-08-25T09:00:00"
+    planned_start_time: str
     duration_minutes: int = 45
     late_after_minutes: int = 10
 
@@ -464,13 +579,16 @@ def schedule_session(
 ):
 
     try:
-        planned_time = datetime.fromisoformat(request.planned_start_time)
-
+        planned_time = datetime.fromisoformat(
+            request.planned_start_time
+        )
     except ValueError:
-
         raise HTTPException(
             status_code=400,
-            detail="planned_start_time must be ISO 8601, e.g. 2026-08-25T09:00:00"
+            detail=(
+                "planned_start_time must be ISO 8601, "
+                "e.g. 2026-08-25T09:00:00"
+            )
         )
 
     session = session_manager.create_session(
@@ -484,12 +602,16 @@ def schedule_session(
         "session_id": session["session_id"],
         "name": session["name"],
         "start_time": session["start_time"].isoformat(),
+        "duration_minutes": session["duration_minutes"],
+        "late_after_minutes": session["late_after_minutes"],
         "status": session["status"]
     }
 
 
 @app.get("/session/scheduled")
-def list_scheduled_sessions(admin=Depends(require_admin)):
+def list_scheduled_sessions(
+    admin=Depends(require_admin)
+):
 
     sessions = session_manager.get_scheduled_sessions()
 
@@ -514,10 +636,11 @@ def cancel_scheduled_session(
     admin=Depends(require_admin)
 ):
 
-    result = session_manager.cancel_session(session_id)
+    result = session_manager.cancel_session(
+        session_id
+    )
 
     if not result["success"]:
-
         raise HTTPException(
             status_code=404,
             detail="Scheduled session not found."
@@ -531,6 +654,15 @@ def start_session_now(
     request: StartSessionRequest = StartSessionRequest(),
     admin=Depends(require_admin)
 ):
+
+    # Do not allow overlapping active sessions.
+    active = session_manager.get_current_session()
+
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A session is already active."
+        )
 
     session = session_manager.create_session(
         name=request.name,
@@ -558,13 +690,25 @@ def start_scheduled_session(
     admin=Depends(require_admin)
 ):
 
-    result = session_manager.activate_session(session_id)
+    active = session_manager.get_current_session()
+
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A session is already active."
+        )
+
+    result = session_manager.activate_session(
+        session_id
+    )
 
     if not result["success"]:
-
         raise HTTPException(
             status_code=404,
-            detail=result.get("message", "Session not found.")
+            detail=result.get(
+                "message",
+                "Session not found."
+            )
         )
 
     _launch_pipeline_if_not_running()
@@ -583,45 +727,66 @@ def start_scheduled_session(
 
 
 @app.post("/session/end")
-def end_session(admin=Depends(require_admin)):
+def end_session(
+    admin=Depends(require_admin)
+):
 
-    result = session_manager.end_session()
+    session = session_manager.get_current_session()
+
+    if session is None:
+        return {
+            "success": False,
+            "status": "no_active_session",
+            "pipeline_stopped": False
+        }
+
+    marked_absent = _mark_session_absentees(session)
+
+    result = session_manager.end_session(
+        session["session_id"]
+    )
 
     global pipeline_process
 
-    if pipeline_process is not None and pipeline_process.poll() is None:
-
+    if (
+        pipeline_process is not None
+        and pipeline_process.poll() is None
+    ):
         pipeline_process.terminate()
 
-    if not result["success"]:
-        return result
-
-    absentee_result = mark_absentees(admin=admin)
-
-    session = result["session"]
+    pipeline_process = None
 
     return {
+        "success": result["success"],
         "session_id": session["session_id"],
         "name": session["name"],
         "start_time": session["start_time"].isoformat(),
         "status": "closed",
         "pipeline_stopped": True,
-        "marked_absent": absentee_result["marked_absent"]
+        "marked_absent": marked_absent
     }
 
 
 @app.get("/session/current")
-def get_current_session(admin=Depends(require_admin)):
+def get_current_session(
+    admin=Depends(require_admin)
+):
+
+    _synchronize_dead_pipeline()
 
     session = session_manager.get_current_session()
 
     if session is None:
-        return {"active": False}
+        return {
+            "active": False,
+            "status": "closed"
+        }
 
     now = datetime.now()
 
     elapsed_minutes = (
-        (now - session["start_time"]).total_seconds() / 60
+        (now - session["start_time"])
+        .total_seconds() / 60
     )
 
     remaining_minutes = max(
@@ -629,8 +794,38 @@ def get_current_session(admin=Depends(require_admin)):
         session["duration_minutes"] - elapsed_minutes
     )
 
+    # Safety fallback in case the ML process has not yet reached
+    # its own duration check.
+    if remaining_minutes <= 0:
+
+        marked_absent = _mark_session_absentees(
+            session
+        )
+
+        session_manager.end_session(
+            session["session_id"]
+        )
+
+        global pipeline_process
+
+        if (
+            pipeline_process is not None
+            and pipeline_process.poll() is None
+        ):
+            pipeline_process.terminate()
+
+        pipeline_process = None
+
+        return {
+            "active": False,
+            "status": "closed",
+            "session_id": session["session_id"],
+            "marked_absent": marked_absent
+        }
+
     return {
         "active": True,
+        "status": "active",
         "session_id": session["session_id"],
         "name": session["name"],
         "start_time": session["start_time"].isoformat(),
