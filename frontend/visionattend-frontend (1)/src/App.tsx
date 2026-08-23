@@ -6,6 +6,7 @@ import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminLiveSessionPage from "./pages/AdminLiveSessionPage";
 import StudentDashboardPage from "./pages/StudentDashboardPage";
 
 export default function App() {
@@ -22,6 +23,15 @@ export default function App() {
             element={
               <ProtectedRoute requiredRole="admin">
                 <AdminDashboardPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/live-session"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminLiveSessionPage />
               </ProtectedRoute>
             }
           />
