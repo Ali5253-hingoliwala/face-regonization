@@ -21,6 +21,10 @@ class SessionManager:
     def create_session(self, name=None, planned_start_time=None, duration_minutes=45, late_after_minutes=10):
         is_immediate = planned_start_time is None
         now = datetime.now()
+
+        if not is_immediate and planned_start_time <= now:
+            raise ValueError("A scheduled session must be set for a future date and time.")
+
         start_time = now if is_immediate else planned_start_time
         clean_name = (name or "").strip() or "Untitled Session"
 
