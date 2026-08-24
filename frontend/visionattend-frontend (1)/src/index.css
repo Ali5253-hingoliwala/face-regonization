@@ -37,12 +37,12 @@ html { background-color: var(--color-bg); transition: background-color .25s ease
 body { background-color: var(--color-bg); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; transition: background-color .25s ease, color .25s ease; }
 ::selection { background-color: var(--color-accent); color: white; }
 
-/* The sidebar controls this value: 0 when closed, 16rem when open. */
-.portal-active main { margin-left: 0; transition: margin-left .3s ease, max-width .3s ease, padding .3s ease; }
-/* The calendar used to reserve 16rem permanently; let the shared sidebar state control it instead. */
+/* Shared admin layout: the content uses the full available width and contracts with the sliding sidebar. */
+.portal-active main { width: 100%; max-width: none !important; margin-left: 0; margin-right: 0; box-sizing: border-box; transition: margin-left .3s ease, width .3s ease, padding .3s ease; }
+/* Calendar previously had a permanent 16rem left reservation. Remove it so the shared state controls the layout. */
 .portal-active .lg\\:pl-64 { padding-left: 0 !important; }
 @media (min-width: 1024px) {
-  .portal-active main { margin-left: var(--portal-sidebar-offset, 0px); }
+  .portal-active main { width: calc(100% - var(--portal-sidebar-offset, 0px)); margin-left: var(--portal-sidebar-offset, 0px); }
 }
 
 .dark {
