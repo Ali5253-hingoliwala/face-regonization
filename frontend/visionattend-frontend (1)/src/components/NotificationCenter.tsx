@@ -1,88 +1,32 @@
 import { useEffect, useState } from "react";
-import { Bell, CalendarClock, CheckCircle2, Radio } from "lucide-react";
+import { Bell, CalendarClock, CheckCircle2, Radio, Trash2, X } from "lucide-react";
 import { api } from "../api/client";
 
-type Notice = { id: string; title: string; text: string; kind: "live" | "scheduled" | "attendance" };
+type Notice = { id: string; title: string; text: string; kind: "live" | "scheduled" | "attendance"; createdAt: number };
+const STORAGE_KEY = "va_notifications";
 
 export default function NotificationCenter() {
   const [open, setOpen] = useState(false);
-  const [notices, setNotices] = useState<Notice[]>([]);
+  const [notices, setNotices] = useState<Notice[]>(() => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; } });
+
+  function save(items: Notice[]) { setNotices(items); localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+  function add(notice: Omit<Notice, "createdAt">) {
+    if (notices.some(n => n.id === notice.id)) return;
+    save([{ ...notice, createdAt: Date.now() }, ...notices].slice(0, 50));
+  }
 
   async function refresh() {
     try {
-      const [currentRes, scheduledRes] = await Promise.all([
-        api.get("/session/current"),
-        api.get("/session/scheduled"),
-      ]);
-      const current = currentRes.data;
-      const scheduled = scheduledRes.data?.sessions ?? [];
-      const next = scheduled[0];
-      const nextNotices: Notice[] = [];
-
-      if (current?.active) {
-        nextNotices.push({
-          id: `live-${current.session_id}`,
-          title: "AI session is live",
-          text: `${current.name ?? "Attendance Session"} is currently being monitored.`,
-          kind: "live",
-        });
-      }
-
-      if (next) {
-        const when = new Date(next.start_time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-        nextNotices.push({
-          id: `scheduled-${next.session_id}`,
-          title: "Upcoming session",
-          text: `${next.name} is scheduled for ${when}.`,
-          kind: "scheduled",
-        });
-      }
-
-      if (!nextNotices.length) {
-        nextNotices.push({
-          id: "ready",
-          title: "VisionAttend is ready",
-          text: "No active or upcoming sessions right now.",
-          kind: "attendance",
-        });
-      }
-      setNotices(nextNotices);
-    } catch {
-      // Keep the last notification state during temporary backend restarts.
-    }
+      const [currentRes, scheduledRes] = await Promise.all([api.get("/session/current"), api.get("/session/scheduled")]);
+      const current = currentRes.data; const scheduled = scheduledRes.data?.sessions ?? [];
+      if (current?.active) add({ id: `live-${current.session_id}`, title: "AI session started", text: `${current.name ?? "Untitled Session"} is being monitored live.`, kind: "live" });
+      scheduled.forEach((s: any) => add({ id: `scheduled-${s.session_id}`, title: "Session scheduled", text: `${s.name ?? "Untitled Session"} is scheduled for ${new Date(s.planned_start_time || s.start_time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`, kind: "scheduled" }));
+    } catch {}
   }
+  useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 5000); return () => window.clearInterval(timer); }, [notices]);
+  const icon = (kind: Notice["kind"]) => kind === "live" ? <Radio size={16}/> : kind === "scheduled" ? <CalendarClock size={16}/> : <CheckCircle2 size={16}/>;
 
-  useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const icon = (kind: Notice["kind"]) =>
-    kind === "live" ? <Radio size={16} /> : kind === "scheduled" ? <CalendarClock size={16} /> : <CheckCircle2 size={16} />;
-
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen(v => !v)} className="relative rounded-xl border border-line bg-panel p-2.5 text-ink-muted hover:text-ink" aria-label="Notifications">
-        <Bell size={19} />
-        {notices.length > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent" />}
-      </button>
-      {open && (
-        <div className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-line bg-panel p-3 shadow-xl">
-          <div className="flex items-center justify-between px-2 py-2">
-            <div><p className="font-semibold">Notifications</p><p className="text-xs text-ink-muted">Live system updates</p></div>
-            <span className="rounded-full bg-accent-soft px-2 py-1 text-[10px] font-medium text-accent">LIVE</span>
-          </div>
-          <div className="mt-2 space-y-2">
-            {notices.map(n => (
-              <div key={n.id} className="flex gap-3 rounded-xl bg-panel-hover p-3">
-                <div className="mt-0.5 text-accent">{icon(n.kind)}</div>
-                <div><p className="text-sm font-medium">{n.title}</p><p className="mt-1 text-xs leading-5 text-ink-muted">{n.text}</p></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return <div className="relative"><button onClick={() => setOpen(v=>!v)} className="relative rounded-xl border border-line bg-panel p-2.5 text-ink-muted hover:text-ink" aria-label="Notifications"><Bell size={19}/>{notices.length>0&&<span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent"/>}</button>
+    {open&&<div className="absolute right-0 top-12 z-50 w-96 rounded-2xl border border-line bg-panel p-3 shadow-xl"><div className="flex items-center justify-between border-b border-line px-2 pb-3"><div><p className="font-semibold">Notifications</p><p className="text-xs text-ink-muted">Your notification history</p></div><div className="flex gap-1"><button onClick={()=>save([])} className="rounded-lg p-2 text-xs text-ink-muted hover:bg-panel-hover" title="Clear all"><Trash2 size={15}/></button><button onClick={()=>setOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-panel-hover"><X size={15}/></button></div></div><div className="mt-2 max-h-[420px] space-y-2 overflow-y-auto">{notices.length?notices.map(n=><div key={n.id} className="flex gap-3 rounded-xl bg-panel-hover p-3"><div className="mt-0.5 text-accent">{icon(n.kind)}</div><div className="min-w-0"><p className="text-sm font-medium">{n.title}</p><p className="mt-1 text-xs leading-5 text-ink-muted">{n.text}</p><p className="mt-1 text-[10px] text-ink-faint">{new Date(n.createdAt).toLocaleString()}</p></div></div>):<div className="py-12 text-center text-sm text-ink-muted">No notifications</div>}</div>{notices.length>0&&<button onClick={()=>save([])} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2 text-xs font-medium text-ink-muted hover:bg-panel-hover"><Trash2 size={14}/> Clear all notifications</button>}</div>}
+  </div>;
 }
