@@ -8,6 +8,8 @@ const panels = [
   { id: "how", title: "How it works", text: "Schedule a lecture, start the AI session, verify each real face, and let VisionAttend record attendance automatically.", icon: ShieldCheck },
 ];
 
+const faceRecognitionImage = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/4QK0RXhpZgAATU0AKgAAAAgABAEOAAIAAAASAAABSodpAAQAAAABAAABGgEDAAIAAAAUAAAA0gEQAAIAAAAUAAAA6gEGAAMAAAABAAEAAIdpAAQAAAABAAABKodpAAQAAAABAAABGgESAAMAAAABAAEAAAEaAAUAAAABAAA8gEbAAUAAAABAAA8qgExAAIAAAATAAABOgF2AAUAAAABAAA+ogF2AAUAAAABAAA+sgESAAMAAAABAAEAAAEaAAUAAAABAAABAAEyAAIAAAAUAAABAgF2AAUAAAABAAABBgF2AAUAAAABAAABCgF2AAUAAAABAAABEgF2AAUAAAABAAABGgF2AAUAAAABAAABIgF2AAUAAAABAAABMgF2AAUAAAABAAABQwF2AAUAAAABAAABTQF2AAUAAAABAAABWgF2AAUAAAABAAABbgF2AAUAAAABAAABegF2AAUAAAABAAABjgF2AAUAAAABAAABngF2AAUAAAABAAABqgF2AAUAAAABAAABsgF2AAUAAAABAAABugF2AAUAAAABAAABygF2AAUAAAABAAAB0gF2AAUAAAABAAAB2gF2AAUAAAABAAAB4gF2AAUAAAABAAAB6gF2AAUAAAABAAAB8gF2AAUAAAABAAAB+gF2AAUAAAABAAACAgF2AAUAAAABAAACDgF2AAUAAAABAAACFgF2AAUAAAABAAACHgF2AAUAAAABAAACJgF2AAUAAAABAAACLgF2AAUAAAABAAACNgF2AAUAAAABAAACPgF2AAUAAAABAAACRgF2AAUAAAABAAACVgF2AAUAAAABAAACXgF2AAUAAAABAAACZgF2AAUAAAABAAACbgF2AAUAAAABAAACdgF2AAUAAAABAAACfgF2AAUAAAABAAACngF2AAUAAAABAAACpgF2AAUAAAABAAACrgF2AAUAAAABAAACtgF2AAUAAAABAAACvgF2AAUAAAABAAACxgF2AAUAAAABAAACzgF2AAUAAAABAAAC1gF2AAUAAAABAAAC3gF2AAUAAAABAAAC5gF2AAUAAAABAAAC7gF2AAUAAAABAAAC9gF2AAUAAAABAAAC/gF2AAUAAAABAAADCgF2AAUAAAABAAADFgF2AAUAAAABAAADHgF2AAUAAAABAAADJgF2AAUAAAABAAADLgF2AAUAAAABAAADNgF2AAUAAAABAAADPgF2AAUAAAABAAADRgF2AAUAAAABAAADVgF2AAUAAAABAAADXgF2AAUAAAABAAADZgF2AAUAAAABAAADbgF2AAUAAAABAAADdgF2AAUAAAABAAADfgF2AAUAAAABAAADngF2AAUAAAABAAADpgF2AAUAAAABAAADrgF2AAUAAAABAAADtgF2AAUAAAABAAADvgF2AAUAAAABAAADxgF2AAUAAAABAAADzgF2AAUAAAABAAAD1gF2AAUAAAABAAAD3gF2AAUAAAABAAAD5gF2AAUAAAABAAAD7gF2AAUAAAABAAAD9gF2AAUAAAABAAAD/gF2AAUAAAABAAAEA...";
+
 export default function LandingPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const active = panels.find(p => p.id === expanded);
@@ -36,7 +38,14 @@ export default function LandingPage() {
               )}
             </section>
             <section className="relative flex items-center justify-center border-t border-line bg-panel-hover p-8 md:border-l md:border-t-0">
-              <div className="relative flex h-64 w-64 items-center justify-center rounded-3xl border border-accent/20 bg-panel shadow-lg"><div className="absolute inset-8 rounded-full border border-accent/20"/><div className="absolute inset-16 rounded-full border border-accent/30"/><ScanFace size={72} strokeWidth={1.2} className="text-accent"/><div className="absolute bottom-5 left-5 right-5 flex items-center justify-between font-mono text-[10px] text-ink-muted"><span>VISIONATTEND AI</span><span className="text-present">LIVE READY</span></div></div>
+              <div className="relative h-64 w-64 overflow-hidden rounded-3xl border border-accent/20 bg-panel shadow-lg sm:h-72 sm:w-72">
+                <img src={faceRecognitionImage} alt="AI face recognition scan" className="h-full w-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
+                <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between font-mono text-[10px] text-white drop-shadow">
+                  <span>VISIONATTEND AI</span>
+                  <span className="text-green-300">LIVE READY</span>
+                </div>
+              </div>
               <div className="absolute bottom-8 right-8 rounded-xl border border-line bg-panel p-3 shadow-sm"><BarChart3 size={18} className="text-accent"/></div>
             </section>
           </div>
