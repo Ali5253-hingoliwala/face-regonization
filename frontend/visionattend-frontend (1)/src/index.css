@@ -91,6 +91,21 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 .dark .text-green-700 { color: #65c7a5 !important; }
 .dark .text-red-600 { color: #ff8b8b !important; }
 
+/* Dark-theme card icons: recessed icon background + bold, vibrant white outline/icon. */
+.dark .bg-blue-soft,
+.dark .bg-sky-soft,
+.dark .bg-mint-soft,
+.dark .bg-green-soft,
+.dark .bg-rose-soft,
+.dark .bg-lavender-soft,
+.dark .bg-peach-soft,
+.dark .bg-accent-soft {
+  background-color: rgba(0, 0, 0, 0.30) !important;
+  border: 2px solid #ffffff !important;
+  color: #ffffff !important;
+  box-sizing: border-box;
+}
+
 .dark .bg-blue-soft svg,
 .dark .bg-sky-soft svg,
 .dark .bg-mint-soft svg,
@@ -98,7 +113,11 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 .dark .bg-rose-soft svg,
 .dark .bg-lavender-soft svg,
 .dark .bg-peach-soft svg,
-.dark .bg-accent-soft svg { color: #f2b95d !important; stroke: currentColor; }
+.dark .bg-accent-soft svg {
+  color: #ffffff !important;
+  stroke: currentColor;
+  stroke-width: 2.5;
+}
 
 .dark .dark-datetime { color-scheme: dark; }
 .dark .dark-datetime::-webkit-calendar-picker-indicator { opacity: .85; }
