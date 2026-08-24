@@ -64,7 +64,7 @@ export default function LoginPage() {
         <div className="relative z-10 flex flex-col items-center px-10 text-center">
           <div className="relative mb-8 animate-float">
             <ViewfinderFrame active cornerSize={22} className="relative w-56 h-56 overflow-hidden rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-center justify-center">
-              <img src="/images/face-animation.jpg" alt="Face recognition" className="absolute inset-0 h-full w-full object-cover opacity-90" />
+              <img src="/images/images.jpg" alt="Face recognition" className="absolute inset-0 h-full w-full object-cover opacity-90" />
               <div className="absolute inset-0 bg-panel-dark/20" />
               <div className="absolute inset-0 rounded-full border border-accent-glow/50 animate-pulse-ring" />
               <div className="absolute left-4 right-4 top-1/2 h-px bg-accent-glow/80 shadow-[0_0_12px_rgba(217,154,76,0.9)] animate-scan" />
