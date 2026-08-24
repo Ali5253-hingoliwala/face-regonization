@@ -37,12 +37,12 @@ html { background-color: var(--color-bg); transition: background-color .25s ease
 body { background-color: var(--color-bg); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; transition: background-color .25s ease, color .25s ease; }
 ::selection { background-color: var(--color-accent); color: white; }
 
-/* Shared admin layout: the content uses the full available width and contracts with the sliding sidebar. */
-.portal-active main { width: 100%; max-width: none !important; margin-left: 0; margin-right: 0; box-sizing: border-box; transition: margin-left .3s ease, width .3s ease, padding .3s ease; }
-/* Calendar previously had a permanent 16rem left reservation. Remove it so the shared state controls the layout. */
+/* The sidebar controls this value: 0 when closed, 16rem when open. */
+.portal-active main { margin-left: 0; transition: margin-left .3s ease, max-width .3s ease, padding .3s ease; }
+/* The calendar used to reserve 16rem permanently; let the shared sidebar state control it instead. */
 .portal-active .lg\\:pl-64 { padding-left: 0 !important; }
 @media (min-width: 1024px) {
-  .portal-active main { width: calc(100% - var(--portal-sidebar-offset, 0px)); margin-left: var(--portal-sidebar-offset, 0px); }
+  .portal-active main { margin-left: var(--portal-sidebar-offset, 0px); }
 }
 
 .dark {
@@ -70,6 +70,7 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
   --color-sky: #78ccff;
   --color-lavender: #bea5ff;
 }
+
 .dark body { background-color: var(--color-bg); color: var(--color-ink); }
 .dark input, .dark select, .dark textarea { color: var(--color-ink); }
 .dark input::placeholder, .dark textarea::placeholder { color: var(--color-ink-faint); }
@@ -79,6 +80,7 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 .dark .text-green-700 { color: #65c7a5 !important; }
 .dark .text-red-600 { color: #ff8b8b !important; }
 
+/* Gold icon treatment for the dark theme. */
 .dark .bg-blue-soft svg,
 .dark .bg-sky-soft svg,
 .dark .bg-mint-soft svg,
@@ -86,7 +88,11 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 .dark .bg-rose-soft svg,
 .dark .bg-lavender-soft svg,
 .dark .bg-peach-soft svg,
-.dark .bg-accent-soft svg { color: #ffffff !important; stroke: currentColor; }
+.dark .bg-accent-soft svg { color: #f2b95d !important; stroke: currentColor; }
+
+/* Keep the browser's native date/time popup in the same dark visual system. */
+.dark .dark-datetime { color-scheme: dark; }
+.dark .dark-datetime::-webkit-calendar-picker-indicator { opacity: .85; }
 
 @keyframes scan-sweep { 0% { transform: translateY(-100%); } 100% { transform: translateY(100%); } }
 .animate-scan { animation: scan-sweep 3.5s ease-in-out infinite; }
