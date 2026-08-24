@@ -13,17 +13,23 @@ const links = [
   { label: "Profile", to: "/profile", icon: UserRound },
 ];
 
-export default function AdminSidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
+export default function AdminSidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const { name, logout, theme, toggleTheme } = useAuth();
+  const [internalOpen, setInternalOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const controlled = typeof open === "boolean" && !!onClose;
+  const isOpen = controlled ? open : internalOpen;
+  const close = () => controlled ? onClose?.() : setInternalOpen(false);
+  const toggle = () => controlled ? (isOpen ? onClose?.() : undefined) : setInternalOpen(v => !v);
+
   return <>
-    <button onClick={() => onClose ? (open ? onClose() : undefined) : undefined} aria-label="Sidebar" className="fixed left-4 top-4 z-[70] flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel text-ink shadow-sm transition hover:bg-panel-hover">
-      {open ? <X size={19}/> : <MoreHorizontal size={21}/>} 
+    <button onClick={toggle} aria-label={isOpen ? "Close sidebar" : "Open sidebar"} className="fixed left-4 top-4 z-[70] flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel text-ink shadow-sm transition hover:-translate-y-0.5 hover:bg-panel-hover">
+      {isOpen ? <X size={19}/> : <MoreHorizontal size={21}/>} 
     </button>
-    {open && onClose && <button aria-label="Close sidebar" onClick={onClose} className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]" />}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-line bg-panel shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"}`}>
+    {isOpen && <button aria-label="Close sidebar overlay" onClick={close} className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]" />}
+    <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-line bg-panel shadow-2xl transition-transform duration-300 ease-out ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
       <div className="border-b border-line px-6 pb-5 pt-20"><div className="font-display text-xl font-semibold">VisionAttend</div><p className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-accent">AI Attendance</p></div>
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">{links.map(({label,to,icon:Icon})=><NavLink key={to} to={to} end={to==="/admin"} onClick={onClose} className={({isActive})=>`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all duration-200 ${isActive?"bg-accent text-white shadow-sm":"text-ink-muted hover:translate-x-1 hover:bg-panel-hover hover:text-ink"}`}><Icon size={18} className="transition-transform group-hover:scale-110"/><span>{label}</span></NavLink>)}</nav>
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">{links.map(({label,to,icon:Icon})=><NavLink key={to} to={to} end={to==="/admin"} onClick={close} className={({isActive})=>`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all duration-200 ${isActive?"bg-accent text-white shadow-sm":"text-ink-muted hover:translate-x-1 hover:bg-panel-hover hover:text-ink"}`}><Icon size={18} className="transition-transform group-hover:scale-110"/><span>{label}</span></NavLink>)}</nav>
       <div className="border-t border-line p-4">
         <div className="mb-3 rounded-xl bg-panel-hover px-4 py-3"><p className="text-sm font-medium">{name || "Administrator"}</p><p className="mt-1 text-xs text-ink-muted">Administrator</p></div>
         <button onClick={toggleTheme} className="mb-2 flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm text-ink-muted transition hover:bg-panel-hover hover:text-ink"><span className="flex items-center gap-3">{theme === "dark" ? <Moon size={18}/> : <Sun size={18}/>} {theme === "dark" ? "Dark mode" : "Light mode"}</span><span className="text-xs">Switch</span></button>
@@ -37,7 +43,8 @@ export default function AdminSidebar({ open = false, onClose }: { open?: boolean
 function ConfirmDialog({ title, text, onCancel, onConfirm }: { title:string; text:string; onCancel:()=>void; onConfirm:()=>void }) {
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-5 backdrop-blur-sm" onMouseDown={onCancel}>
     <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-6 shadow-2xl" onMouseDown={e=>e.stopPropagation()}>
-      <h2 className="text-lg font-semibold">{title}</h2><p className="mt-2 text-sm text-ink-muted">{text}</p>
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent"><LogOut size={22}/></div>
+      <h2 className="mt-4 text-center text-lg font-semibold">{title}</h2><p className="mt-2 text-center text-sm text-ink-muted">{text}</p>
       <div className="mt-6 flex justify-end gap-2"><button onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-ink-muted hover:bg-panel-hover">Cancel</button><button onClick={onConfirm} className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600">Sign Out</button></div>
     </div>
   </div>;
