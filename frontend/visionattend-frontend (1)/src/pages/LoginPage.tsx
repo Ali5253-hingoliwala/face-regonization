@@ -62,7 +62,16 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden bg-panel-dark items-center justify-center">
         <div className="absolute inset-0 opacity-40" style={{ backgroundImage: "radial-gradient(circle at 30% 20%, rgba(217,154,76,0.30), transparent 55%), radial-gradient(circle at 80% 80%, rgba(217,154,76,0.18), transparent 50%)" }} />
         <div className="relative z-10 flex flex-col items-center px-10 text-center">
-          <div className="relative mb-8 animate-float"><ViewfinderFrame active cornerSize={22} className="relative w-40 h-40 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-center justify-center"><div className="absolute inset-0 rounded-full border border-accent-glow/40 animate-pulse-ring" /><ScanFace className="text-accent-glow" size={56} strokeWidth={1.5} /></ViewfinderFrame></div>
+          <div className="relative mb-8 animate-float">
+            <ViewfinderFrame active cornerSize={22} className="relative w-56 h-56 overflow-hidden rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-center justify-center">
+              <img src="/images/face-animation.jpg" alt="Face recognition" className="absolute inset-0 h-full w-full object-cover opacity-90" />
+              <div className="absolute inset-0 bg-panel-dark/20" />
+              <div className="absolute inset-0 rounded-full border border-accent-glow/50 animate-pulse-ring" />
+              <div className="absolute left-4 right-4 top-1/2 h-px bg-accent-glow/80 shadow-[0_0_12px_rgba(217,154,76,0.9)] animate-scan" />
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-accent-glow/5 to-transparent animate-pulse" />
+              <ScanFace className="relative z-10 text-white/80" size={36} strokeWidth={1.2} />
+            </ViewfinderFrame>
+          </div>
           <h2 className="font-display text-2xl font-semibold text-white mb-3">Verified in a glance</h2>
           <p className="text-white/60 text-sm leading-relaxed max-w-xs">Face recognition and liveness detection confirm exactly who's present — and exactly when.</p>
         </div>
