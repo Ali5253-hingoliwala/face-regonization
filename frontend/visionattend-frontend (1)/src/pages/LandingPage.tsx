@@ -10,7 +10,6 @@ const panels = [
 
 const faceRecognitionImage = "https://blog.truora.com/hubfs/biometria%20facial.jpg";
 
-// Gold polygon/network artwork matching the uploaded background design.
 const networkBackground = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 1200'%3E%3Crect width='1200' height='1200' fill='%23fff'/%3E%3Cg fill='none' stroke='%23d1a12e' stroke-width='3' opacity='.92'%3E%3Cpath d='M0 0L82 118L230 67L286 0M0 210L82 118L215 226L286 0L382 34L365 166L505 72L640 0L644 112L825 56L1010 60L1105 0M0 465L145 430L215 226L365 166L460 348L640 286L740 410L850 286L1010 340L1105 210L1200 214M0 650L145 430L325 655L460 348L610 515L740 410L905 535L1010 340L1135 490L1200 405M0 790L140 835L325 655L500 780L610 515L760 665L905 535L1040 700L1135 490L1200 625M0 1005L140 835L330 970L500 780L655 920L760 665L925 805L1040 700L1200 820M0 1200L140 835L330 970L500 780L655 920L760 665L925 805L1040 700L1200 820L1200 1200M215 226L382 34L505 72L640 286L825 56L850 286L1010 60L1105 210L1010 340L905 535L1040 700L925 805L760 665L610 515L500 780L325 655L145 430M365 166L460 348L640 286L740 410L850 286L1010 340M644 112L640 286L825 56L850 286M1135 490L1200 405L1200 625L1040 700M140 835L0 790L0 650L145 430M330 970L140 835L0 1005L0 1200M500 780L655 920L760 665M925 805L1040 700L1200 820'/%3E%3C/g%3E%3Cg fill='%23d1a12e'%3E%3Ccircle cx='82' cy='118' r='6'/%3E%3Ccircle cx='215' cy='226' r='6'/%3E%3Ccircle cx='365' cy='166' r='6'/%3E%3Ccircle cx='460' cy='348' r='6'/%3E%3Ccircle cx='610' cy='515' r='6'/%3E%3Ccircle cx='740' cy='410' r='6'/%3E%3Ccircle cx='905' cy='535' r='6'/%3E%3Ccircle cx='1040' cy='700' r='6'/%3E%3Ccircle cx='760' cy='665' r='6'/%3E%3Ccircle cx='500' cy='780' r='6'/%3E%3C/g%3E%3C/svg%3E`;
 
 export default function LandingPage() {
@@ -39,9 +38,17 @@ export default function LandingPage() {
               )}
             </section>
             <section className="relative flex items-center justify-center overflow-hidden border-t border-line bg-[#f4efe7] p-8 md:border-l md:border-t-0">
-              <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url("${networkBackground}")` }} />
-              <div className="absolute inset-0 bg-[#f4efe7]/25" />
-              <div className="relative h-72 w-72 overflow-hidden rounded-3xl border border-accent/20 bg-panel shadow-lg sm:h-80 sm:w-80">
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: `url("${networkBackground}")`,
+                  backgroundRepeat: "repeat",
+                  backgroundSize: "620px 620px",
+                  backgroundPosition: "center center",
+                }}
+              />
+              <div className="absolute inset-0 bg-[#f4efe7]/10" />
+              <div className="relative z-10 h-72 w-72 overflow-hidden rounded-3xl border border-accent/20 bg-panel shadow-lg sm:h-80 sm:w-80">
                 <img src={faceRecognitionImage} alt="AI face recognition scan" className="h-full w-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" />
                 <div className="absolute left-6 right-6 top-6 bottom-6 border border-white/80 rounded-sm pointer-events-none" />
