@@ -3,107 +3,20 @@ import { ChevronLeft, ChevronRight, CircleCheck, CircleX, CalendarDays, Clock3, 
 import AdminSidebar from "../components/AdminSidebar";
 import { api } from "../api/client";
 
-type RecordItem = { student_id?: string; name?: string; status?: string; date?: string; time?: string; session_id?: string };
-type Session = { session_id: string; name: string; start_time: string; planned_start_time?: string; duration_minutes: number; status?: string; overdue?: boolean; ended_at?: string };
-
-const keyFor = (date: Date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
-
-export default function AdminCalendarPage() {
-  const [month, setMonth] = useState(() => new Date());
-  const [records, setRecords] = useState<RecordItem[]>([]);
-  const [scheduled, setScheduled] = useState<Session[]>([]);
-  const [history, setHistory] = useState<Session[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-
-  const days = useMemo(() => new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate(), [month]);
-  const first = useMemo(() => new Date(month.getFullYear(), month.getMonth(), 1).getDay(), [month]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [scheduledRes, historyRes] = await Promise.all([
-          api.get("/session/scheduled"),
-          api.get("/session/history"),
-        ]);
-        if (!cancelled) {
-          setScheduled(scheduledRes.data.sessions ?? []);
-          setHistory(historyRes.data.sessions ?? []);
-        }
-      } catch (e) { console.error(e); }
-
-      const requests = Array.from({ length: days }, (_, i) => {
-        const d = new Date(month.getFullYear(), month.getMonth(), i + 1);
-        return api.get(`/attendance/${keyFor(d)}`).then(r => r.data.records ?? []).catch(() => []);
-      });
-      const data = (await Promise.all(requests)).flat();
-      if (!cancelled) setRecords(data);
-    }
-    void load();
-    return () => { cancelled = true; };
-  }, [month, days]);
-
-  const byDate = useMemo(() => {
-    const map: Record<string, RecordItem[]> = {};
-    for (const r of records) if (r.date) (map[r.date] ??= []).push(r);
-    return map;
-  }, [records]);
-
-  const sessionsByDate = useMemo(() => {
-    const map: Record<string, Session[]> = {};
-    for (const s of [...history, ...scheduled]) {
-      const value = s.planned_start_time || s.start_time;
-      const key = keyFor(new Date(value));
-      (map[key] ??= []).push(s);
-    }
-    return map;
-  }, [history, scheduled]);
-
-  const selectedRecords = selected ? byDate[selected] ?? [] : [];
-  const selectedSessions = selected ? sessionsByDate[selected] ?? [] : [];
-  const monthName = month.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  const cells = Array.from({ length: first + days }, (_, i) => i < first ? null : i - first + 1);
-  const todayKey = keyFor(new Date());
-
-  return <div className="min-h-screen bg-bg text-ink"><AdminSidebar/><div className="lg:pl-64"><main className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
-    <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Admin Portal</p>
-    <h1 className="mt-1 font-display text-3xl font-semibold">Calendar</h1>
-    <p className="mt-2 text-sm text-ink-muted">See scheduled lectures, completed sessions, and attendance activity in one place.</p>
-
-    <section className="mt-6 rounded-2xl border border-line bg-panel p-5 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3"><div className="rounded-xl bg-accent-soft p-3 text-accent"><CalendarDays size={20}/></div><div><h2 className="font-semibold">{monthName}</h2><p className="text-xs text-ink-muted">Select a day to inspect sessions and attendance.</p></div></div>
-        <div className="flex items-center gap-2"><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))} className="rounded-xl border border-line p-2 hover:bg-panel-hover"><ChevronLeft size={18}/></button><button onClick={()=>setMonth(new Date())} className="rounded-xl border border-line px-3 py-2 text-xs font-medium hover:bg-panel-hover">Today</button><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))} className="rounded-xl border border-line p-2 hover:bg-panel-hover"><ChevronRight size={18}/></button></div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-7 gap-2 text-center text-[10px] font-semibold uppercase tracking-wider text-ink-faint">
-        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} className="py-2">{d}</div>)}
-        {cells.map((day,i)=>{
-          if(!day) return <div key={`blank-${i}`} className="min-h-28"/>;
-          const d = new Date(month.getFullYear(), month.getMonth(), day);
-          const date = keyFor(d);
-          const rs = byDate[date] ?? [];
-          const ss = sessionsByDate[date] ?? [];
-          const present = rs.filter(r=>r.status?.toLowerCase()==="present").length;
-          const late = rs.filter(r=>r.status?.toLowerCase()==="late").length;
-          const absent = rs.filter(r=>r.status?.toLowerCase()==="absent").length;
-          return <button key={date} onClick={()=>setSelected(date)} className={`min-h-28 rounded-xl border p-2 text-left transition ${selected===date?"border-accent bg-accent-soft":"border-line bg-bg hover:bg-panel-hover"}`}>
-            <div className="flex items-center justify-between"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${todayKey===date?"bg-accent text-white":""}`}>{day}</span>{ss.length>0&&<span className="rounded-full bg-panel px-2 py-0.5 text-[9px] font-medium text-ink-muted">{ss.length} session{ss.length>1?"s":""}</span>}</div>
-            <div className="mt-3 space-y-1">
-              {ss.slice(0,2).map(s=><div key={s.session_id} className="truncate rounded-md bg-accent-soft px-2 py-1 text-[10px] font-medium text-accent">{s.name}</div>)}
-              {ss.length>2&&<p className="text-[9px] text-ink-faint">+{ss.length-2} more</p>}
-              {rs.length>0&&<div className="mt-2 space-y-0.5 text-[9px]"><div className="flex items-center gap-1 text-green-700"><CircleCheck size={10}/> {present} present · {late} late</div><div className="flex items-center gap-1 text-red-600"><CircleX size={10}/> {absent} absent</div></div>}
-            </div>
-          </button>;
-        })}
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-4 border-t border-line pt-4 text-[11px] text-ink-muted"><span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-accent-soft"/>Scheduled / session</span><span className="flex items-center gap-2"><CircleCheck size={12}/>Present / late</span><span className="flex items-center gap-2"><CircleX size={12}/>Absent</span></div>
-    </section>
-
-    {selected&&<section className="mt-5 rounded-2xl border border-line bg-panel shadow-sm"><div className="border-b border-line px-6 py-5"><h2 className="font-semibold">{new Date(`${selected}T00:00:00`).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</h2><p className="mt-1 text-xs text-ink-muted">{selectedSessions.length} session{selectedSessions.length===1?"":"s"} · {selectedRecords.length} attendance records</p></div><div className="grid gap-5 p-5 lg:grid-cols-[1fr_1.4fr]">
-      <div><h3 className="mb-3 text-sm font-semibold">Sessions</h3><div className="space-y-3">{selectedSessions.map(s=><div key={s.session_id} className="rounded-xl border border-line p-4"><div className="flex items-start gap-3"><div className="rounded-lg bg-accent-soft p-2 text-accent"><Play size={14}/></div><div className="min-w-0"><p className="font-medium">{s.name}</p><p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><Clock3 size={12}/>{new Date(s.planned_start_time||s.start_time).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})} · {s.duration_minutes} min</p><p className="mt-1 text-[10px] text-ink-faint">ID {s.session_id.slice(-8)} · {s.status}</p></div></div></div>)}{!selectedSessions.length&&<p className="text-sm text-ink-muted">No sessions scheduled or completed on this date.</p>}</div></div>
-      <div><h3 className="mb-3 text-sm font-semibold">Attendance</h3><div className="grid gap-3 sm:grid-cols-2">{selectedRecords.map((r,i)=><div key={`${r.student_id}-${i}`} className="rounded-xl border border-line p-4"><p className="font-medium">{r.name}</p><p className="text-xs text-ink-muted">{r.student_id} · Session {r.session_id?.slice(-8) ?? "—"}</p><span className="mt-3 inline-block rounded-full bg-accent-soft px-3 py-1 text-xs text-accent">{r.status}</span></div>)}{!selectedRecords.length&&<p className="text-sm text-ink-muted">No attendance records for this date.</p>}</div></div>
-    </div></section>}
-  </main></div></div>;
+type RecordItem={student_id?:string;name?:string;status?:string;date?:string;time?:string;session_id?:string}; type Session={session_id:string;name:string;start_time:string;planned_start_time?:string;duration_minutes:number;status?:string;overdue?:boolean;ended_at?:string};
+const keyFor=(date:Date)=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`; const DETAIL_SIZE=6;
+export default function AdminCalendarPage(){
+ const [month,setMonth]=useState(()=>new Date()),[records,setRecords]=useState<RecordItem[]>([]),[scheduled,setScheduled]=useState<Session[]>([]),[history,setHistory]=useState<Session[]>([]),[selected,setSelected]=useState<string|null>(null),[detailPage,setDetailPage]=useState(1);
+ const days=useMemo(()=>new Date(month.getFullYear(),month.getMonth()+1,0).getDate(),[month]); const first=useMemo(()=>new Date(month.getFullYear(),month.getMonth(),1).getDay(),[month]);
+ useEffect(()=>{let cancelled=false;async function load(){try{const [scheduledRes,historyRes]=await Promise.all([api.get("/session/scheduled"),api.get("/session/history")]);if(!cancelled){setScheduled(scheduledRes.data.sessions??[]);setHistory(historyRes.data.sessions??[]);}}catch{}const data=(await Promise.all(Array.from({length:days},(_,i)=>{const d=new Date(month.getFullYear(),month.getMonth(),i+1);return api.get(`/attendance/${keyFor(d)}`).then(r=>r.data.records??[]).catch(()=>[])}))).flat();if(!cancelled)setRecords(data)}void load();return()=>{cancelled=true}},[month,days]);
+ const byDate=useMemo(()=>{const map:Record<string,RecordItem[]>={};for(const r of records)if(r.date)(map[r.date]??=[]).push(r);return map},[records]);
+ const sessionsByDate=useMemo(()=>{const map:Record<string,Session[]>={};for(const s of [...history,...scheduled]){const key=keyFor(new Date(s.planned_start_time||s.start_time));(map[key]??=[]).push(s)}return map},[history,scheduled]);
+ const selectedRecords=selected?byDate[selected]??[]:[],selectedSessions=selected?sessionsByDate[selected]??[]:[]; const detailPages=Math.max(1,Math.ceil(selectedRecords.length/DETAIL_SIZE)); const visibleRecords=selectedRecords.slice((detailPage-1)*DETAIL_SIZE,detailPage*DETAIL_SIZE); const monthName=month.toLocaleDateString(undefined,{month:"long",year:"numeric"}); const cells=Array.from({length:first+days},(_,i)=>i<first?null:i-first+1); const todayKey=keyFor(new Date());
+ function chooseDay(date:string){setSelected(date);setDetailPage(1)}
+ return <div className="min-h-screen bg-bg text-ink"><AdminSidebar/><div className="lg:pl-64"><main className="mx-auto max-w-7xl px-5 py-8 sm:px-8"><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Admin Portal</p><h1 className="mt-1 font-display text-3xl font-semibold">Calendar</h1><p className="mt-2 text-sm text-ink-muted">Scheduled lectures, completed sessions and compact attendance activity.</p>
+ <section className="mt-6 rounded-2xl border border-line bg-panel p-5 shadow-sm"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><div className="rounded-xl bg-accent-soft p-3 text-accent"><CalendarDays size={20}/></div><div><h2 className="font-semibold">{monthName}</h2><p className="text-xs text-ink-muted">Select a day to inspect details.</p></div></div><div className="flex items-center gap-2"><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))} className="rounded-xl border border-line p-2 hover:bg-panel-hover"><ChevronLeft size={18}/></button><button onClick={()=>setMonth(new Date())} className="rounded-xl border border-line px-3 py-2 text-xs font-medium hover:bg-panel-hover">Today</button><button onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))} className="rounded-xl border border-line p-2 hover:bg-panel-hover"><ChevronRight size={18}/></button></div></div>
+ <div className="mt-6 grid grid-cols-7 gap-2 text-center text-[10px] font-semibold uppercase tracking-wider text-ink-faint">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} className="py-2">{d}</div>)}{cells.map((day,i)=>{if(!day)return <div key={`blank-${i}`} className="min-h-28"/>;const d=new Date(month.getFullYear(),month.getMonth(),day),date=keyFor(d),rs=byDate[date]??[],ss=sessionsByDate[date]??[],present=rs.filter(r=>r.status?.toLowerCase()==="present").length,late=rs.filter(r=>r.status?.toLowerCase()==="late").length,absent=rs.filter(r=>r.status?.toLowerCase()==="absent").length;return <button key={date} onClick={()=>chooseDay(date)} className={`min-h-28 rounded-xl border p-2 text-left transition ${selected===date?"border-accent bg-accent-soft":"border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center justify-between"><span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${todayKey===date?"bg-accent text-white":""}`}>{day}</span>{ss.length>0&&<span className="rounded-full bg-panel px-2 py-0.5 text-[9px] font-medium text-ink-muted">{ss.length} session{ss.length>1?"s":""}</span>}</div><div className="mt-3 space-y-1">{ss.slice(0,2).map(s=><div key={s.session_id} className="truncate rounded-md bg-accent-soft px-2 py-1 text-[10px] font-medium text-accent">{s.name}</div>)}{ss.length>2&&<p className="text-[9px] text-ink-faint">+{ss.length-2} more</p>}{rs.length>0&&<div className="mt-2 space-y-0.5 text-[9px]"><div className="flex items-center gap-1 text-green-700"><CircleCheck size={10}/> {present} present · {late} late</div><div className="flex items-center gap-1 text-red-600"><CircleX size={10}/> {absent} absent</div></div>}</div></button>})}</div><div className="mt-5 flex flex-wrap gap-4 border-t border-line pt-4 text-[11px] text-ink-muted"><span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-accent-soft"/>Scheduled / session</span><span className="flex items-center gap-2"><CircleCheck size={12}/>Present / late</span><span className="flex items-center gap-2"><CircleX size={12}/>Absent</span></div></section>
+ {selected&&<section className="mt-5 rounded-2xl border border-line bg-panel shadow-sm"><div className="border-b border-line px-6 py-5"><h2 className="font-semibold">{new Date(`${selected}T00:00:00`).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</h2><p className="mt-1 text-xs text-ink-muted">{selectedSessions.length} session{selectedSessions.length===1?"":"s"} · {selectedRecords.length} attendance records</p></div><div className="grid gap-5 p-5 lg:grid-cols-[1fr_1.4fr]"><div><h3 className="mb-3 text-sm font-semibold">Sessions</h3><div className="space-y-3">{selectedSessions.slice(0,4).map(s=><div key={s.session_id} className="rounded-xl border border-line p-4"><div className="flex items-start gap-3"><div className="rounded-lg bg-accent-soft p-2 text-accent"><Play size={14}/></div><div className="min-w-0"><p className="font-medium">{s.name}</p><p className="mt-1 flex items-center gap-1 text-xs text-ink-muted"><Clock3 size={12}/>{new Date(s.planned_start_time||s.start_time).toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})} · {s.duration_minutes} min</p><p className="mt-1 text-[10px] text-ink-faint">ID {s.session_id.slice(-8)} · {s.status}</p></div></div></div>)}{!selectedSessions.length&&<p className="text-sm text-ink-muted">No sessions on this date.</p>}</div></div><div><h3 className="mb-3 text-sm font-semibold">Attendance</h3><div className="grid gap-3 sm:grid-cols-2">{visibleRecords.map((r,i)=><div key={`${r.student_id}-${i}`} className="rounded-xl border border-line p-4"><p className="font-medium">{r.name}</p><p className="text-xs text-ink-muted">{r.student_id} · Session {r.session_id?.slice(-8)??"—"}</p><span className="mt-3 inline-block rounded-full bg-accent-soft px-3 py-1 text-xs text-accent">{r.status}</span></div>)}</div>{!selectedRecords.length&&<p className="text-sm text-ink-muted">No attendance records for this date.</p>}{detailPages>1&&<Pager page={detailPage} total={detailPages} onChange={setDetailPage}/>}</div></div></section>}
+ </main></div></div>;
 }
+function Pager({page,total,onChange}:{page:number;total:number;onChange:(p:number)=>void}){return <div className="mt-4 flex items-center justify-center gap-3 border-t border-line pt-4"><button disabled={page===1} onClick={()=>onChange(page-1)} className="rounded-lg border border-line p-2 disabled:opacity-30 hover:bg-panel-hover"><ChevronLeft size={16}/></button><span className="text-xs text-ink-muted">Page {page} of {total}</span><button disabled={page===total} onClick={()=>onChange(page+1)} className="rounded-lg border border-line p-2 disabled:opacity-30 hover:bg-panel-hover"><ChevronRight size={16}/></button></div>}
