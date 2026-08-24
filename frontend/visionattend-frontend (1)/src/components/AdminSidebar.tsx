@@ -1,4 +1,4 @@
-import { Activity, BarChart3, CalendarDays, CalendarClock, LayoutDashboard, LogOut, UserRound, Users, MoreHorizontal, Sun, Moon, X, Bell, ChevronDown } from "lucide-react";
+import { Activity, BarChart3, CalendarDays, CalendarClock, LogOut, UserRound, Users, MoreHorizontal, Sun, Moon, X, ChevronDown } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
@@ -28,27 +28,40 @@ export default function AdminSidebar() {
   const { name, logout, theme, toggleTheme } = useAuth();
   const location = useLocation();
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   const title = useMemo(() => pageTitles[location.pathname] ?? "Admin Portal", [location.pathname]);
 
   useEffect(() => {
     document.documentElement.classList.add("portal-active");
-    document.documentElement.style.setProperty("--portal-sidebar-offset", open ? "18rem" : "0px");
+    document.documentElement.style.setProperty("--portal-sidebar-offset", open ? "16rem" : "0px");
     return () => {
       document.documentElement.classList.remove("portal-active");
       document.documentElement.style.removeProperty("--portal-sidebar-offset");
     };
   }, [open]);
 
+  useEffect(() => {
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (!(event.target as HTMLElement)?.closest?.("[data-profile-menu]")) setProfileOpen(false);
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
   function close() {
     setOpen(false);
   }
 
+  function requestLogout() {
+    setProfileOpen(false);
+    setConfirmLogout(true);
+  }
+
   return (
     <>
-      {/* Permanent authenticated navigation bar */}
-      <header className="fixed inset-x-0 top-0 z-[60] border-b border-line bg-bg/90 backdrop-blur-xl transition-[left] duration-300" style={{ left: open ? "18rem" : "0" }}>
+      <header className="fixed inset-x-0 top-0 z-[60] border-b border-line bg-bg/90 backdrop-blur-xl transition-[left] duration-300" style={{ left: open ? "16rem" : "0" }}>
         <div className="flex h-16 items-center gap-3 px-4 sm:px-6">
           <button
             onClick={() => setOpen(v => !v)}
@@ -80,39 +93,60 @@ export default function AdminSidebar() {
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            <NavLink
-              to="/profile"
-              title="Profile"
-              className="hidden h-10 items-center gap-2 rounded-xl border border-line bg-panel px-2.5 text-sm text-ink-muted transition hover:bg-panel-hover hover:text-ink sm:flex"
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent">
-                {(name || "A").slice(0, 1).toUpperCase()}
-              </span>
-              <span className="max-w-24 truncate">{name || "Admin"}</span>
-              <ChevronDown size={14} />
-            </NavLink>
+            <div className="relative hidden sm:block" data-profile-menu>
+              <button
+                type="button"
+                onClick={() => setProfileOpen(v => !v)}
+                aria-expanded={profileOpen}
+                aria-haspopup="menu"
+                className="flex h-10 items-center gap-2 rounded-xl border border-line bg-panel px-2.5 text-sm text-ink-muted transition hover:bg-panel-hover"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent">
+                  {(name || "A").slice(0, 1).toUpperCase()}
+                </span>
+                <span className="max-w-24 truncate">{name || "Admin"}</span>
+                <ChevronDown size={14} className={`transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {profileOpen && (
+                <div className="absolute right-0 top-[calc(100%+8px)] w-48 overflow-hidden rounded-xl border border-line bg-panel p-1.5 shadow-xl" role="menu">
+                  <NavLink
+                    to="/profile"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-ink-muted hover:bg-panel-hover hover:text-ink"
+                    role="menuitem"
+                  >
+                    <UserRound size={16} />
+                    Profile
+                  </NavLink>
+                  <button
+                    type="button"
+                    onClick={requestLogout}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-ink-muted hover:bg-red-50 hover:text-red-600"
+                    role="menuitem"
+                  >
+                    <LogOut size={16} />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Keeps page content below the permanent navbar */}
       <div className="h-16" aria-hidden="true" />
 
-      {/* Sidebar */}
       {open && (
-        <button
-          aria-label="Close sidebar overlay"
-          onClick={close}
-          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] lg:hidden"
-        />
+        <button aria-label="Close sidebar overlay" onClick={close} className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] lg:hidden" />
       )}
 
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-line bg-panel shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"}`}
-      >
-        <div className="border-b border-line px-6 pb-5 pt-20">
-          <div className="font-display text-xl font-semibold">VisionAttend</div>
-          <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-accent">AI Attendance</p>
+      <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-line bg-panel shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"}`}>
+        <div className="border-b border-line px-5 pb-5 pt-20">
+          <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-accent">VisionAttend · AI Attendance</p>
+          <p className="mt-4 text-sm text-ink-muted">Welcome back</p>
+          <p className="mt-0.5 font-display text-xl font-semibold">{name || "Administrator"}</p>
+          <p className="mt-1 text-xs text-ink-muted">Administrator</p>
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
@@ -123,11 +157,7 @@ export default function AdminSidebar() {
               end={to === "/admin"}
               onClick={close}
               className={({ isActive }) =>
-                `group flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all duration-200 ${
-                  isActive
-                    ? "bg-accent text-white shadow-sm"
-                    : "text-ink-muted hover:translate-x-1 hover:bg-panel-hover hover:text-ink"
-                }`
+                `group flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all duration-200 ${isActive ? "bg-accent text-white shadow-sm" : "text-ink-muted hover:translate-x-1 hover:bg-panel-hover hover:text-ink"}`
               }
             >
               <Icon size={18} className="transition-transform group-hover:scale-110" />
@@ -137,11 +167,6 @@ export default function AdminSidebar() {
         </nav>
 
         <div className="border-t border-line p-4">
-          <div className="mb-3 rounded-xl bg-panel-hover px-4 py-3">
-            <p className="text-sm font-medium">{name || "Administrator"}</p>
-            <p className="mt-1 text-xs text-ink-muted">Administrator</p>
-          </div>
-
           <button
             onClick={toggleTheme}
             className="mb-2 flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm text-ink-muted transition hover:bg-panel-hover hover:text-ink"
