@@ -37,9 +37,13 @@ html { background-color: var(--color-bg); transition: background-color .25s ease
 body { background-color: var(--color-bg); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; transition: background-color .25s ease, color .25s ease; }
 ::selection { background-color: var(--color-accent); color: white; }
 
-.portal-active .lg\\:pl-64 { padding-left: var(--portal-sidebar-offset, 0px) !important; transition: padding-left .3s ease; }
-.portal-active > main { margin-left: var(--portal-sidebar-offset, 0px); transition: margin-left .3s ease, max-width .3s ease, padding .3s ease; }
-.portal-active main { transition: max-width .3s ease, padding .3s ease; }
+/* The sidebar controls this value: 0 when closed, 16rem when open. */
+.portal-active main { margin-left: 0; transition: margin-left .3s ease, max-width .3s ease, padding .3s ease; }
+/* The calendar used to reserve 16rem permanently; let the shared sidebar state control it instead. */
+.portal-active .lg\\:pl-64 { padding-left: 0 !important; }
+@media (min-width: 1024px) {
+  .portal-active main { margin-left: var(--portal-sidebar-offset, 0px); }
+}
 
 .dark {
   --color-bg: #0b1220;
@@ -75,7 +79,6 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 .dark .text-green-700 { color: #65c7a5 !important; }
 .dark .text-red-600 { color: #ff8b8b !important; }
 
-/* Keep status/card icons crisp white in dark mode. */
 .dark .bg-blue-soft svg,
 .dark .bg-sky-soft svg,
 .dark .bg-mint-soft svg,
