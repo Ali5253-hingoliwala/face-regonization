@@ -1,258 +1,49 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ScanFace,
-  ShieldCheck,
-  Radar,
-  BarChart3,
-  ArrowRight,
-} from "lucide-react";
-import ViewfinderFrame from "../components/ViewfinderFrame";
+import { ArrowRight, BarChart3, ScanFace, ShieldCheck } from "lucide-react";
 import Navbar from "../components/Navbar";
-import Reveal from "../components/Reveal";
-import AnimatedCounter from "../components/AnimatedCounter";
 
-const features = [
-  {
-    icon: ScanFace,
-    title: "Face Recognition",
-    description:
-      "Every student is matched against their registered face embedding in real time -- no ID cards, no manual roll call.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Liveness Detection",
-    description:
-      "Blink, head-turn, and gaze signals confirm a real person is in front of the camera, not a photo held up to fool it.",
-  },
-  {
-    icon: Radar,
-    title: "Session-Based Tracking",
-    description:
-      "Every lecture is a named session with its own start time -- attendance is measured against when class actually began.",
-  },
-  {
-    icon: BarChart3,
-    title: "Present, Late & Absent",
-    description:
-      "Arrivals are automatically sorted by how many minutes into the lecture they showed up, right down to the second.",
-  },
-];
-
-const steps = [
-  { label: "Schedule", text: "An admin names the lecture and sets its start time." },
-  { label: "Verify", text: "The camera recognizes each student as they arrive." },
-  { label: "Confirm", text: "Liveness checks rule out a held-up photo." },
-  { label: "Record", text: "Present, Late, or Absent is logged automatically." },
-];
-
-const stats = [
-  { value: 3, suffix: "s", decimals: 0, label: "Avg. check-in time" },
-  { value: 99.2, suffix: "%", decimals: 1, label: "Recognition accuracy" },
-  { value: 45, suffix: "min", decimals: 0, label: "Tracked per session" },
-  { value: 100, suffix: "%", decimals: 0, label: "Automatic recording" },
-];
-
-const HERO_STAGES = [
-  { label: "SCANNING", color: "text-ink-muted" },
-  { label: "MATCHING", color: "text-accent" },
-  { label: "LIVE", color: "text-present" },
-  { label: "RECORDED", color: "text-present" },
+const panels = [
+  { id: "features", title: "Features", text: "AI face recognition, liveness detection, session-based attendance and automatic Present, Late or Absent tracking.", icon: ScanFace },
+  { id: "how", title: "How it works", text: "Schedule a lecture, start the AI session, verify each real face, and let VisionAttend record attendance automatically.", icon: ShieldCheck },
 ];
 
 export default function LandingPage() {
-  const [stage, setStage] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStage((s) => (s + 1) % HERO_STAGES.length);
-    }, 1800);
-    return () => clearInterval(interval);
-  }, []);
-
-  const currentStage = HERO_STAGES[stage];
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const active = panels.find(p => p.id === expanded);
 
   return (
-    <div className="min-h-screen bg-bg text-ink font-body">
-      <Navbar />
-
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pt-16 pb-24 grid md:grid-cols-2 gap-12 items-center">
-        <div>
-          <p className="font-mono text-xs text-accent tracking-wider uppercase mb-4">
-            Attendance, verified
-          </p>
-          <h1 className="font-display text-5xl md:text-6xl font-semibold leading-[1.05] tracking-tight">
-            Smart attendance.
-            <br />
-            Powered by AI.
-          </h1>
-          <p className="mt-6 text-ink-muted text-lg leading-relaxed max-w-md">
-            VisionAttend AI recognizes each student, confirms they're really
-            there, and records Present, Late, or Absent automatically --
-            timed against the exact minute the lecture began.
-          </p>
-          <div className="mt-8 flex items-center gap-4">
-            <Link
-              to="/signup"
-              className="inline-flex items-center gap-2 bg-accent text-white font-medium px-6 py-3 rounded-md shadow-sm shadow-accent/20 hover:bg-accent-dim hover:shadow-md hover:scale-[1.02] transition-all"
-            >
-              Get Started
-              <ArrowRight size={16} />
-            </Link>
-            <Link
-              to="/login"
-              className="text-ink-muted hover:text-ink transition-colors px-6 py-3"
-            >
-              Log in
-            </Link>
+    <div className="min-h-screen bg-bg text-ink">
+      <Navbar activePanel={expanded} onPanelChange={setExpanded} />
+      <main className={`mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl items-center px-6 py-8 transition-all duration-500 ${expanded ? "items-start pt-8" : ""}`}>
+        <div className={`w-full overflow-hidden rounded-3xl border border-line bg-panel shadow-sm transition-all duration-500 ${expanded ? "min-h-[calc(100vh-112px)]" : "max-w-3xl mx-auto"}`}>
+          <div className="grid min-h-[520px] md:grid-cols-[1.05fr_.95fr]">
+            <section className="flex flex-col justify-center p-8 sm:p-12">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-accent">AI attendance • verified</p>
+              <h1 className="mt-4 font-display text-4xl font-semibold leading-tight sm:text-5xl">Smart attendance.<br/>Powered by AI.</h1>
+              <p className="mt-5 max-w-lg text-sm leading-6 text-ink-muted sm:text-base">VisionAttend recognizes students, confirms liveness and records attendance against every lecture session.</p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/signup" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-medium text-white hover:bg-accent-dim transition">Get Started <ArrowRight size={16}/></Link>
+                <Link to="/login" className="inline-flex items-center gap-2 rounded-xl border border-line px-5 py-3 text-sm font-medium hover:bg-panel-hover transition">Log in</Link>
+              </div>
+              {expanded && active && (
+                <div className="mt-10 rounded-2xl border border-line bg-bg p-5 animate-in fade-in">
+                  <div className="flex items-center gap-3"><active.icon size={20} className="text-accent"/><h2 className="font-display text-xl font-semibold">{active.title}</h2></div>
+                  <p className="mt-3 text-sm leading-6 text-ink-muted">{active.text}</p>
+                  {active.id === "features" && <div className="mt-5 grid gap-3 sm:grid-cols-3"><Mini title="Face Recognition"/><Mini title="Liveness"/><Mini title="Session Tracking"/></div>}
+                  {active.id === "how" && <div className="mt-5 grid gap-3 sm:grid-cols-4"><Mini title="01 Schedule"/><Mini title="02 Verify"/><Mini title="03 Detect"/><Mini title="04 Record"/></div>}
+                </div>
+              )}
+            </section>
+            <section className="relative flex items-center justify-center border-t border-line bg-panel-hover p-8 md:border-l md:border-t-0">
+              <div className="relative flex h-64 w-64 items-center justify-center rounded-3xl border border-accent/20 bg-panel shadow-lg"><div className="absolute inset-8 rounded-full border border-accent/20"/><div className="absolute inset-16 rounded-full border border-accent/30"/><ScanFace size={72} strokeWidth={1.2} className="text-accent"/><div className="absolute bottom-5 left-5 right-5 flex items-center justify-between font-mono text-[10px] text-ink-muted"><span>VISIONATTEND AI</span><span className="text-present">LIVE READY</span></div></div>
+              <div className="absolute bottom-8 right-8 rounded-xl border border-line bg-panel p-3 shadow-sm"><BarChart3 size={18} className="text-accent"/></div>
+            </section>
           </div>
         </div>
-
-        {/* Interactive hero visual -- cycles through the actual
-            detection stages the camera pipeline goes through */}
-        <div className="relative flex items-center justify-center">
-          <ViewfinderFrame
-            active
-            cornerSize={28}
-            className="w-72 h-72 md:w-80 md:h-80 bg-panel rounded-2xl border border-line shadow-xl shadow-slate-200/60 overflow-hidden flex items-center justify-center"
-          >
-            <div className="absolute inset-0 overflow-hidden rounded-2xl">
-              <div className="absolute left-0 right-0 h-24 bg-gradient-to-b from-accent/0 via-accent/10 to-accent/0 animate-scan" />
-            </div>
-
-            <svg width="120" height="120" viewBox="0 0 120 120" fill="none" className="text-ink-faint">
-              <circle cx="60" cy="45" r="26" stroke="currentColor" strokeWidth="2" />
-              <path
-                d="M15 110c6-28 24-42 45-42s39 14 45 42"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between font-mono text-xs">
-              <span className={`transition-colors duration-300 ${currentStage.color}`}>
-                {currentStage.label}
-              </span>
-              <span className="text-ink-muted">conf: 94.2%</span>
-            </div>
-          </ViewfinderFrame>
-        </div>
-      </section>
-
-      {/* Stats */}
-      <section className="border-t border-b border-line bg-panel/50">
-        <div className="mx-auto max-w-6xl px-6 py-12 grid grid-cols-2 lg:grid-cols-4 gap-8">
-          {stats.map((stat, i) => (
-            <Reveal key={stat.label} delay={i * 80}>
-              <div className="text-center lg:text-left">
-                <div className="font-display text-3xl md:text-4xl font-semibold text-accent">
-                  <AnimatedCounter
-                    target={stat.value}
-                    suffix={stat.suffix}
-                    decimals={stat.decimals}
-                  />
-                </div>
-                <p className="text-sm text-ink-muted mt-1">{stat.label}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* Features */}
-      <section id="features" className="mx-auto max-w-6xl px-6 py-20">
-        <Reveal>
-          <h2 className="font-display text-3xl font-semibold mb-10">
-            What it checks, every time
-          </h2>
-        </Reveal>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {features.map((feature, i) => (
-            <Reveal key={feature.title} delay={i * 100}>
-              <ViewfinderFrame
-                cornerSize={14}
-                className="group bg-panel border border-line rounded-xl p-6 shadow-sm shadow-slate-200/40 hover:shadow-lg hover:shadow-slate-200/70 hover:-translate-y-1 transition-all duration-300 h-full"
-              >
-                <feature.icon
-                  className="text-accent mb-4 group-hover:scale-110 transition-transform duration-300"
-                  size={22}
-                />
-                <h3 className="font-display font-medium mb-2">{feature.title}</h3>
-                <p className="text-sm text-ink-muted leading-relaxed">
-                  {feature.description}
-                </p>
-              </ViewfinderFrame>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* How it works */}
-      <section id="how-it-works" className="mx-auto max-w-6xl px-6 py-20 border-t border-line">
-        <Reveal>
-          <h2 className="font-display text-3xl font-semibold mb-10">
-            How a lecture gets recorded
-          </h2>
-        </Reveal>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {steps.map((step, i) => (
-            <Reveal key={step.label} delay={i * 100}>
-              <div className="relative pl-6">
-                <div className="absolute left-0 top-1 font-mono text-xs text-accent">
-                  {String(i + 1).padStart(2, "0")}
-                </div>
-                <h3 className="font-display font-medium mb-1">{step.label}</h3>
-                <p className="text-sm text-ink-muted leading-relaxed">{step.text}</p>
-                {i < steps.length - 1 && (
-                  <div className="hidden lg:block absolute top-1.5 -right-3 w-6 h-px bg-line" />
-                )}
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA band */}
-      <Reveal>
-        <section className="mx-auto max-w-6xl px-6 py-16">
-          <div className="relative overflow-hidden rounded-2xl bg-panel-dark px-10 py-14 text-center">
-            <div
-              className="absolute inset-0 opacity-30"
-              style={{
-                backgroundImage:
-                  "radial-gradient(circle at 50% 0%, rgba(217,154,76,0.35), transparent 60%)",
-              }}
-            />
-            <div className="relative z-10">
-              <h2 className="font-display text-3xl font-semibold text-white mb-3">
-                Ready to see it in action?
-              </h2>
-              <p className="text-white/60 mb-8 max-w-md mx-auto">
-                Register a face, start a lecture, and watch attendance record
-                itself in real time.
-              </p>
-              <Link
-                to="/signup"
-                className="inline-flex items-center gap-2 bg-accent text-white font-medium px-6 py-3 rounded-md hover:bg-accent-dim hover:scale-[1.02] transition-all"
-              >
-                Get Started
-                <ArrowRight size={16} />
-              </Link>
-            </div>
-          </div>
-        </section>
-      </Reveal>
-
-      {/* Footer */}
-      <footer className="mx-auto max-w-6xl px-6 py-10 border-t border-line flex items-center justify-between text-sm text-ink-muted">
-        <span>VisionAttend AI</span>
-        <div className="flex gap-6">
-          <Link to="/login" className="hover:text-ink transition-colors">Log in</Link>
-          <Link to="/signup" className="hover:text-ink transition-colors">Sign up</Link>
-        </div>
-      </footer>
+      </main>
     </div>
   );
 }
+
+function Mini({ title }: { title: string }) { return <div className="rounded-xl border border-line bg-panel p-3 text-xs font-medium">{title}</div>; }
