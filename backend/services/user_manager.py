@@ -20,24 +20,21 @@ class UserManager:
     def create_user(self, username, password_hash, role, student_id=None, name=None):
         if self.collection.find_one({"username": username}):
             return None
-
-        doc = {
-            "username": username,
-            "password_hash": password_hash,
-            "role": role,
-            "student_id": student_id,
-            "name": name
-        }
-
+        doc = {"username": username, "password_hash": password_hash, "role": role, "student_id": student_id, "name": name}
         self.collection.insert_one(dict(doc))
         return doc
 
     def get_user(self, username):
         return self.collection.find_one({"username": username})
 
+    def update_profile(self, username, name):
+        result = self.collection.update_one({"username": username}, {"$set": {"name": name}})
+        return result.matched_count > 0
+
+    def update_password(self, username, password_hash):
+        result = self.collection.update_one({"username": username}, {"$set": {"password_hash": password_hash}})
+        return result.matched_count > 0
+
     def delete_student_account(self, student_id):
-        result = self.collection.delete_one({
-            "student_id": student_id,
-            "role": "student"
-        })
+        result = self.collection.delete_one({"student_id": student_id, "role": "student"})
         return result.deleted_count > 0
