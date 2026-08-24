@@ -11,26 +11,26 @@
   --color-accent-glow: #d99a4c;
   --color-ink: #1a1208;
   --color-ink-muted: #6b5e4e;
-  --color-ink-faint: #a8987e;
-  --color-present: #22a878;
-  --color-late: #3da7e8;
-  --color-absent: #ef6262;
-  --color-blue: #4d88db;
-  --color-sky: #3da7e8;
-  --color-lavender: #8b68dc;
+  --color-ink-faint: #8f7e68;
+  --color-present: #15966a;
+  --color-late: #258fd0;
+  --color-absent: #df4d55;
+  --color-blue: #3d78cf;
+  --color-sky: #258fd0;
+  --color-lavender: #7655c9;
   --color-panel-dark: #0f2640;
   --color-panel-dark-elevated: #16345a;
   --color-font-display: "Playfair Display", Georgia, serif;
   --font-display: "Playfair Display", Georgia, serif;
   --font-body: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
-  --color-blue-soft: #dcecff;
-  --color-sky-soft: #dff3ff;
-  --color-mint-soft: #d8f6e9;
-  --color-green-soft: #def7e8;
-  --color-rose-soft: #ffe1e1;
-  --color-lavender-soft: #eee5ff;
-  --color-peach-soft: #ffe8cf;
+  --color-blue-soft: #c9e0ff;
+  --color-sky-soft: #c9ecff;
+  --color-mint-soft: #bfeeda;
+  --color-green-soft: #c8efd9;
+  --color-rose-soft: #ffd0d3;
+  --color-lavender-soft: #e0d2ff;
+  --color-peach-soft: #ffd9b4;
 }
 
 html { background-color: var(--color-bg); transition: background-color .25s ease; }
@@ -52,19 +52,19 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
   --color-accent-soft: #352719;
   --color-panel-dark: #070d18;
   --color-panel-dark-elevated: #101b2d;
-  --color-blue-soft: #193557;
-  --color-sky-soft: #163b57;
-  --color-mint-soft: #123d32;
-  --color-green-soft: #153f31;
-  --color-rose-soft: #482128;
-  --color-lavender-soft: #30264f;
-  --color-peach-soft: #4a301d;
-  --color-present: #5de0ad;
-  --color-late: #72c8ff;
-  --color-absent: #ff8585;
-  --color-blue: #83b5f2;
-  --color-sky: #72c8ff;
-  --color-lavender: #b79aff;
+  --color-blue-soft: #214a78;
+  --color-sky-soft: #155071;
+  --color-mint-soft: #14553f;
+  --color-green-soft: #18543b;
+  --color-rose-soft: #642a32;
+  --color-lavender-soft: #44336e;
+  --color-peach-soft: #633d20;
+  --color-present: #64e5b2;
+  --color-late: #78ccff;
+  --color-absent: #ff8888;
+  --color-blue: #8dbbfa;
+  --color-sky: #78ccff;
+  --color-lavender: #bea5ff;
 }
 .dark body { background-color: var(--color-bg); color: var(--color-ink); }
 .dark input, .dark select, .dark textarea { color: var(--color-ink); }
