@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell, CalendarClock, CheckCircle2, Radio, Trash2, X } from "lucide-react";
 import { api } from "../api/client";
-import { NOTIFICATION_EVENT, NOTIFICATION_STORAGE_KEY, NotificationPayload } from "../utils/notifications";
+import { NOTIFICATION_EVENT, NOTIFICATION_STORAGE_KEY, type NotificationPayload } from "../utils/notifications";
 
 type Notice = NotificationPayload & { id: string; createdAt: number };
 
