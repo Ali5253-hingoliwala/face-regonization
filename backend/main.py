@@ -149,6 +149,23 @@ def get_attendance_by_date(date: str, admin=Depends(require_admin)):
     if not records: raise HTTPException(status_code=404, detail=f"No attendance records found for {date}")
     return {"date": date, "count": len(records), "records": list(records.values())}
 
+@app.delete("/admin/attendance-history")
+def clear_attendance_history(admin=Depends(require_admin)):
+    """Clear attendance records and closed session history without touching students/accounts/faces."""
+    active = session_manager.get_current_session()
+    if active is not None:
+        raise HTTPException(status_code=409, detail="Stop the active attendance session before clearing history.")
+    attendance_result = attendance_manager.collection.delete_many({})
+    session_result = session_manager.collection.delete_many({"status": "closed"})
+    return {
+        "success": True,
+        "attendance_deleted": attendance_result.deleted_count,
+        "sessions_deleted": session_result.deleted_count,
+        "students_preserved": True,
+        "accounts_preserved": True,
+        "face_embeddings_preserved": True,
+    }
+
 @app.post("/attendance/mark-absentees")
 def mark_absentees(admin=Depends(require_admin)):
     session = session_manager.get_current_session()
