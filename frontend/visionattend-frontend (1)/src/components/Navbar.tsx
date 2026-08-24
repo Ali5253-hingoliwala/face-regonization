@@ -1,112 +1,25 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import Logo from "./Logo";
 
-const navLinks = [
-  { label: "Features", href: "#features" },
-  { label: "How it works", href: "#how-it-works" },
-];
-
-export default function Navbar() {
-  const [scrolled, setScrolled] = useState(false);
+export default function Navbar({ activePanel, onPanelChange }: { activePanel?: string | null; onPanelChange?: (id: string | null) => void }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const toggle = (id: string) => { onPanelChange?.(activePanel === id ? null : id); setMobileOpen(false); };
 
-  useEffect(() => {
-    function onScroll() {
-      setScrolled(window.scrollY > 12);
-    }
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  return (
-    <header
-      className={`sticky top-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "bg-bg/80 backdrop-blur-md border-b border-line shadow-sm"
-          : "bg-transparent border-b border-transparent"
-      }`}
-    >
-      <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
-        <Link to="/" className="shrink-0">
-          <Logo size={26} />
-        </Link>
-
-        {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="text-sm text-ink-muted hover:text-ink transition-colors relative group"
-            >
-              {link.label}
-              <span className="absolute -bottom-1 left-0 w-0 h-px bg-accent transition-all duration-300 group-hover:w-full" />
-            </a>
-          ))}
-        </nav>
-
-        <div className="hidden md:flex items-center gap-3">
-          <Link
-            to="/login"
-            className="text-sm text-ink-muted hover:text-ink transition-colors px-4 py-2"
-          >
-            Log in
-          </Link>
-          <Link
-            to="/signup"
-            className="text-sm bg-accent text-white font-medium px-4 py-2 rounded-md shadow-sm shadow-accent/20 hover:bg-accent-dim hover:shadow-md transition-all"
-          >
-            Get Started
-          </Link>
-        </div>
-
-        {/* Mobile toggle */}
-        <button
-          className="md:hidden text-ink"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label="Toggle menu"
-        >
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
+  return <header className="sticky top-0 z-50 border-b border-line bg-bg/90 backdrop-blur-md">
+    <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+      <Link to="/"><Logo size={26}/></Link>
+      <nav className="hidden items-center gap-2 md:flex">
+        <button onClick={() => toggle("features")} className={`rounded-lg px-4 py-2 text-sm transition ${activePanel === "features" ? "bg-accent text-white" : "text-ink-muted hover:bg-panel-hover hover:text-ink"}`}>Features</button>
+        <button onClick={() => toggle("how")} className={`rounded-lg px-4 py-2 text-sm transition ${activePanel === "how" ? "bg-accent text-white" : "text-ink-muted hover:bg-panel-hover hover:text-ink"}`}>How it works</button>
+      </nav>
+      <div className="hidden items-center gap-2 md:flex">
+        <Link to="/login" className="rounded-lg px-4 py-2 text-sm text-ink-muted hover:text-ink">Log in</Link>
+        <Link to="/signup" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dim">Get Started</Link>
       </div>
-
-      {/* Mobile menu */}
-      <div
-        className={`md:hidden overflow-hidden transition-all duration-300 ${
-          mobileOpen ? "max-h-64 border-b border-line" : "max-h-0"
-        }`}
-      >
-        <div className="px-6 py-4 flex flex-col gap-4 bg-bg">
-          {navLinks.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              onClick={() => setMobileOpen(false)}
-              className="text-sm text-ink-muted hover:text-ink transition-colors"
-            >
-              {link.label}
-            </a>
-          ))}
-          <div className="flex flex-col gap-2 pt-2">
-            <Link
-              to="/login"
-              onClick={() => setMobileOpen(false)}
-              className="text-sm text-center border border-line rounded-md px-4 py-2 text-ink hover:bg-panel-hover transition-colors"
-            >
-              Log in
-            </Link>
-            <Link
-              to="/signup"
-              onClick={() => setMobileOpen(false)}
-              className="text-sm text-center bg-accent text-white font-medium px-4 py-2 rounded-md hover:bg-accent-dim transition-colors"
-            >
-              Get Started
-            </Link>
-          </div>
-        </div>
-      </div>
-    </header>
-  );
+      <button className="md:hidden" onClick={() => setMobileOpen(v => !v)}>{mobileOpen ? <X size={22}/> : <Menu size={22}/>}</button>
+    </div>
+    {mobileOpen && <div className="border-t border-line bg-bg px-6 py-4 md:hidden"><div className="flex flex-col gap-2"><button onClick={() => toggle("features")} className="rounded-lg px-4 py-3 text-left text-sm hover:bg-panel-hover">Features</button><button onClick={() => toggle("how")} className="rounded-lg px-4 py-3 text-left text-sm hover:bg-panel-hover">How it works</button><Link to="/login" className="rounded-lg border border-line px-4 py-3 text-sm">Log in</Link><Link to="/signup" className="rounded-lg bg-accent px-4 py-3 text-center text-sm font-medium text-white">Get Started</Link></div></div>}
+  </header>;
 }
