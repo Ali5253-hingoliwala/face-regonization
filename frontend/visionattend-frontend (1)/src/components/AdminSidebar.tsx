@@ -1,6 +1,7 @@
-import { Activity, BarChart3, CalendarDays, CalendarClock, LayoutDashboard, LogOut, UserRound, Users } from "lucide-react";
+import { Activity, BarChart3, CalendarDays, CalendarClock, LayoutDashboard, LogOut, UserRound, Users, MoreHorizontal, Sun, Moon, X } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useState } from "react";
 
 const links = [
   { label: "Dashboard", to: "/admin", icon: LayoutDashboard },
@@ -12,11 +13,32 @@ const links = [
   { label: "Profile", to: "/profile", icon: UserRound },
 ];
 
-export default function AdminSidebar({ open = true, onClose }: { open?: boolean; onClose?: () => void }) {
-  const { name, logout } = useAuth();
-  return <><aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-line bg-panel transition-transform duration-200 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}>
-    <div className="border-b border-line px-6 py-5"><div className="font-display text-xl font-semibold">VisionAttend</div><p className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-accent">AI Attendance</p></div>
-    <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">{links.map(({label,to,icon:Icon})=><NavLink key={to} to={to} end={to==="/admin"} onClick={onClose} className={({isActive})=>`flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${isActive?"bg-accent text-white shadow-sm":"text-ink-muted hover:bg-panel-hover hover:text-ink"}`}><Icon size={18}/><span>{label}</span></NavLink>)}</nav>
-    <div className="border-t border-line p-4"><div className="mb-3 rounded-xl bg-panel-hover px-4 py-3"><p className="text-sm font-medium">{name || "Administrator"}</p><p className="mt-1 text-xs text-ink-muted">Administrator</p></div><button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-ink-muted transition hover:bg-red-50 hover:text-red-600"><LogOut size={18}/>Logout</button></div>
-  </aside>{open&&onClose&&<button aria-label="Close sidebar" onClick={onClose} className="fixed inset-0 z-40 bg-black/20 lg:hidden"/>}</>;
+export default function AdminSidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
+  const { name, logout, theme, toggleTheme } = useAuth();
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  return <>
+    <button onClick={() => onClose ? (open ? onClose() : undefined) : undefined} aria-label="Sidebar" className="fixed left-4 top-4 z-[70] flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel text-ink shadow-sm transition hover:bg-panel-hover">
+      {open ? <X size={19}/> : <MoreHorizontal size={21}/>} 
+    </button>
+    {open && onClose && <button aria-label="Close sidebar" onClick={onClose} className="fixed inset-0 z-40 bg-black/25 backdrop-blur-[1px]" />}
+    <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-line bg-panel shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className="border-b border-line px-6 pb-5 pt-20"><div className="font-display text-xl font-semibold">VisionAttend</div><p className="mt-1 font-mono text-[9px] uppercase tracking-[0.2em] text-accent">AI Attendance</p></div>
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">{links.map(({label,to,icon:Icon})=><NavLink key={to} to={to} end={to==="/admin"} onClick={onClose} className={({isActive})=>`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all duration-200 ${isActive?"bg-accent text-white shadow-sm":"text-ink-muted hover:translate-x-1 hover:bg-panel-hover hover:text-ink"}`}><Icon size={18} className="transition-transform group-hover:scale-110"/><span>{label}</span></NavLink>)}</nav>
+      <div className="border-t border-line p-4">
+        <div className="mb-3 rounded-xl bg-panel-hover px-4 py-3"><p className="text-sm font-medium">{name || "Administrator"}</p><p className="mt-1 text-xs text-ink-muted">Administrator</p></div>
+        <button onClick={toggleTheme} className="mb-2 flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm text-ink-muted transition hover:bg-panel-hover hover:text-ink"><span className="flex items-center gap-3">{theme === "dark" ? <Moon size={18}/> : <Sun size={18}/>} {theme === "dark" ? "Dark mode" : "Light mode"}</span><span className="text-xs">Switch</span></button>
+        <button onClick={() => setConfirmLogout(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-ink-muted transition hover:bg-red-50 hover:text-red-600"><LogOut size={18}/>Logout</button>
+      </div>
+    </aside>
+    {confirmLogout && <ConfirmDialog title="Confirm Sign Out" text="Are you sure you want to sign out of your account?" onCancel={() => setConfirmLogout(false)} onConfirm={logout} />}
+  </>;
+}
+
+function ConfirmDialog({ title, text, onCancel, onConfirm }: { title:string; text:string; onCancel:()=>void; onConfirm:()=>void }) {
+  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-5 backdrop-blur-sm" onMouseDown={onCancel}>
+    <div className="w-full max-w-sm rounded-2xl border border-line bg-panel p-6 shadow-2xl" onMouseDown={e=>e.stopPropagation()}>
+      <h2 className="text-lg font-semibold">{title}</h2><p className="mt-2 text-sm text-ink-muted">{text}</p>
+      <div className="mt-6 flex justify-end gap-2"><button onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-ink-muted hover:bg-panel-hover">Cancel</button><button onClick={onConfirm} className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600">Sign Out</button></div>
+    </div>
+  </div>;
 }
