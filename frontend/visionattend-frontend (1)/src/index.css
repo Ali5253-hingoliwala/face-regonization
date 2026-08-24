@@ -26,6 +26,10 @@ html { background-color: var(--color-bg); transition: background-color .25s ease
 body { background-color: var(--color-bg); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; transition: background-color .25s ease, color .25s ease; }
 ::selection { background-color: var(--color-accent); color: white; }
 
+/* Authenticated portal pages resize with the slide-out sidebar. */
+.portal-active .lg\:pl-64 { padding-left: var(--portal-sidebar-offset, 0px) !important; transition: padding-left .3s ease; }
+.portal-active main { transition: max-width .3s ease, padding .3s ease; }
+
 .dark { --color-bg: #0b1220; --color-panel: #111a2b; --color-panel-hover: #1a263b; --color-line: #2a3850; --color-ink: #f4f7fb; --color-ink-muted: #a9b5c7; --color-ink-faint: #718096; --color-accent-soft: #352719; --color-panel-dark: #070d18; --color-panel-dark-elevated: #101b2d; }
 .dark body { background-color: var(--color-bg); color: var(--color-ink); }
 .dark input, .dark select, .dark textarea { color: var(--color-ink); }
