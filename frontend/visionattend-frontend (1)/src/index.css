@@ -12,14 +12,25 @@
   --color-ink: #1a1208;
   --color-ink-muted: #6b5e4e;
   --color-ink-faint: #a8987e;
-  --color-present: #2e7d6b;
-  --color-late: #c8843a;
-  --color-absent: #b91c1c;
+  --color-present: #2e9b78;
+  --color-late: #69aee8;
+  --color-absent: #e36b6b;
+  --color-blue: #5d8fd3;
+  --color-sky: #69aee8;
+  --color-lavender: #8c72d9;
   --color-panel-dark: #0f2640;
   --color-panel-dark-elevated: #16345a;
+  --color-font-display: "Playfair Display", Georgia, serif;
   --font-display: "Playfair Display", Georgia, serif;
   --font-body: "Inter", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+  --color-blue-soft: #e8f1fc;
+  --color-sky-soft: #e8f5fd;
+  --color-mint-soft: #e5f6ef;
+  --color-green-soft: #e9f7ef;
+  --color-rose-soft: #fdecec;
+  --color-lavender-soft: #f0ebfc;
+  --color-peach-soft: #fff0df;
 }
 
 html { background-color: var(--color-bg); transition: background-color .25s ease; }
@@ -30,7 +41,31 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 .portal-active > main { margin-left: var(--portal-sidebar-offset, 0px); transition: margin-left .3s ease, max-width .3s ease, padding .3s ease; }
 .portal-active main { transition: max-width .3s ease, padding .3s ease; }
 
-.dark { --color-bg: #0b1220; --color-panel: #111a2b; --color-panel-hover: #1a263b; --color-line: #2a3850; --color-ink: #f4f7fb; --color-ink-muted: #a9b5c7; --color-ink-faint: #718096; --color-accent-soft: #352719; --color-panel-dark: #070d18; --color-panel-dark-elevated: #101b2d; }
+.dark {
+  --color-bg: #0b1220;
+  --color-panel: #111a2b;
+  --color-panel-hover: #1a263b;
+  --color-line: #2a3850;
+  --color-ink: #f4f7fb;
+  --color-ink-muted: #a9b5c7;
+  --color-ink-faint: #718096;
+  --color-accent-soft: #352719;
+  --color-panel-dark: #070d18;
+  --color-panel-dark-elevated: #101b2d;
+  --color-blue-soft: #182b45;
+  --color-sky-soft: #152f46;
+  --color-mint-soft: #12362f;
+  --color-green-soft: #15372f;
+  --color-rose-soft: #3b2027;
+  --color-lavender-soft: #292443;
+  --color-peach-soft: #3a2a1b;
+  --color-present: #65c7a5;
+  --color-late: #78bdf0;
+  --color-absent: #ff8b8b;
+  --color-blue: #80aee8;
+  --color-sky: #78bdf0;
+  --color-lavender: #b09aef;
+}
 .dark body { background-color: var(--color-bg); color: var(--color-ink); }
 .dark input, .dark select, .dark textarea { color: var(--color-ink); }
 .dark input::placeholder, .dark textarea::placeholder { color: var(--color-ink-faint); }
