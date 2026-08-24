@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from bson import ObjectId
+from fastapi import HTTPException
 
 CURRENT_DIR = Path(__file__).resolve().parent
 UTILS_DIR = CURRENT_DIR.parents[0] / "utils"
@@ -23,7 +24,7 @@ class SessionManager:
         now = datetime.now()
 
         if not is_immediate and planned_start_time <= now:
-            raise ValueError("A scheduled session must be set for a future date and time.")
+            raise HTTPException(status_code=400, detail="A scheduled session must be set for a future date and time.")
 
         start_time = now if is_immediate else planned_start_time
         clean_name = (name or "").strip() or "Untitled Session"
