@@ -37,40 +37,18 @@ export default function NotificationCenter() {
 
   const refresh = useCallback(async () => {
     try {
-      const [currentRes, scheduledRes] = await Promise.all([
-        api.get("/session/current"),
-        api.get("/session/scheduled"),
-      ]);
-
-      const current = currentRes.data;
-      const scheduled = scheduledRes.data?.sessions ?? [];
-
-      if (current?.active && current.session_id) {
-        add({
-          id: `live-${current.session_id}`,
-          title: "AI session started",
-          text: `${current.name ?? "Untitled Session"} is being monitored live.`,
-          kind: "live",
-        });
-      }
-
-      scheduled.forEach((session: any) => {
-        if (!session.session_id) return;
-        add({
-          id: `scheduled-${session.session_id}`,
-          title: "Session scheduled",
-          text: `${session.name ?? "Untitled Session"} is scheduled for ${new Date(session.planned_start_time || session.start_time).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}.`,
-          kind: "scheduled",
-        });
-      });
+      const response = await api.get("/notifications");
+      const serverItems: NotificationPayload[] = response.data?.notifications ?? [];
+      serverItems.forEach(add);
     } catch (error) {
+      // Notification failures must never block the portal itself.
       console.debug("Notification refresh skipped", error);
     }
   }, [add]);
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
+    const timer = window.setInterval(() => void refresh(), 10000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
@@ -112,7 +90,7 @@ export default function NotificationCenter() {
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div>
           <p className="font-semibold">Notifications</p>
-          <p className="text-xs text-ink-muted">Session and attendance updates</p>
+          <p className="text-xs text-ink-muted">Sessions and leave updates</p>
         </div>
         <div className="flex gap-1">
           <button onClick={() => save([])} className="rounded-lg p-2 text-ink-muted hover:bg-panel-hover hover:text-ink" title="Clear all notifications" aria-label="Clear all notifications"><Trash2 size={15} /></button>
