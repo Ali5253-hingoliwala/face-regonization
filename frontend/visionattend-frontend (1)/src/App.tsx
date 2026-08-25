@@ -11,6 +11,9 @@ import AdminStudentsPage from "./pages/AdminStudentsPage";
 import AdminCalendarPage from "./pages/AdminCalendarPage";
 import AdminSchedulePage from "./pages/AdminSchedulePage";
 import StudentDashboardPage from "./pages/StudentDashboardPage";
+import StudentAttendancePage from "./pages/StudentAttendancePage";
+import StudentCalendarPage from "./pages/StudentCalendarPage";
+import StudentLeavePage from "./pages/StudentLeavePage";
 import ProfilePage from "./pages/ProfilePage";
 import NotFoundPage from "./pages/NotFoundPage";
 
@@ -26,6 +29,9 @@ export default function App() {
     <Route path="/admin/calendar" element={<ProtectedRoute requiredRole="admin"><AdminCalendarPage /></ProtectedRoute>} />
     <Route path="/admin/schedule" element={<ProtectedRoute requiredRole="admin"><AdminSchedulePage /></ProtectedRoute>} />
     <Route path="/student" element={<ProtectedRoute requiredRole="student"><StudentDashboardPage /></ProtectedRoute>} />
+    <Route path="/student/attendance" element={<ProtectedRoute requiredRole="student"><StudentAttendancePage /></ProtectedRoute>} />
+    <Route path="/student/calendar" element={<ProtectedRoute requiredRole="student"><StudentCalendarPage /></ProtectedRoute>} />
+    <Route path="/student/leave" element={<ProtectedRoute requiredRole="student"><StudentLeavePage /></ProtectedRoute>} />
     <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
     <Route path="*" element={<NotFoundPage />} />
   </Routes></BrowserRouter></AuthProvider>;
