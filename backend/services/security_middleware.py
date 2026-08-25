@@ -38,6 +38,16 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.failures = defaultdict(int)
         self.failure_until = defaultdict(float)
 
+        # Register the portal routes when the application middleware stack is
+        # built. This keeps the leave/notification API in its own module while
+        # preserving the existing backend entry point.
+        try:
+            from leave_routes import router as leave_router
+            if not any(getattr(route, "path", None) == "/leave" for route in app.routes):
+                app.include_router(leave_router)
+        except Exception as exc:
+            print(f"[SECURITY] Leave route registration warning: {exc}")
+
     @staticmethod
     def _ip(request):
         forwarded = request.headers.get("x-forwarded-for")
