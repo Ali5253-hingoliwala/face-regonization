@@ -17,11 +17,11 @@ import StudentCalendarPage from "./pages/StudentCalendarPage";
 import StudentLeavePage from "./pages/StudentLeavePage";
 import ProfilePage from "./pages/ProfilePage";
 import NotFoundPage from "./pages/NotFoundPage";
-import Landing3DExperience from "./pages/Landing3DExperience";
+import Landing3DExperienceV2 from "./pages/Landing3DExperienceV2";
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
-    <Route path="/3d-test" element={<Landing3DExperience />} />
+    <Route path="/3d-test" element={<Landing3DExperienceV2 />} />
     <Route path="/" element={<LandingPage />} />
     <Route path="/login" element={<LoginPage />} />
     <Route path="/signup" element={<SignupPage />} />
