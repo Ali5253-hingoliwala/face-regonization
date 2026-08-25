@@ -1,4 +1,4 @@
-import { Activity, BarChart3, CalendarDays, CalendarClock, LayoutDashboard, LogOut, UserRound, Users, MoreHorizontal, Sun, Moon, X, ChevronDown } from "lucide-react";
+import { Activity, BarChart3, CalendarDays, CalendarClock, FileText, LayoutDashboard, LogOut, UserRound, Users, MoreHorizontal, Sun, Moon, X, ChevronDown } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
@@ -11,10 +11,11 @@ const links = [
   { label: "Students", to: "/admin/students", icon: Users },
   { label: "Calendar", to: "/admin/calendar", icon: CalendarDays },
   { label: "Schedule", to: "/admin/schedule", icon: CalendarClock },
+  { label: "Leave", to: "/admin/leave", icon: FileText },
   { label: "Profile", to: "/profile", icon: UserRound },
 ];
 
-const pageTitles: Record<string, string> = { "/admin": "Dashboard", "/admin/live-session": "Live Session", "/admin/attendance": "Attendance", "/admin/students": "Students", "/admin/calendar": "Calendar", "/admin/schedule": "Schedule", "/profile": "Profile" };
+const pageTitles: Record<string, string> = { "/admin": "Dashboard", "/admin/live-session": "Live Session", "/admin/attendance": "Attendance", "/admin/students": "Students", "/admin/calendar": "Calendar", "/admin/schedule": "Schedule", "/admin/leave": "Leave Management", "/profile": "Profile" };
 
 export default function AdminSidebar() {
   const { name, logout, theme, toggleTheme } = useAuth();
