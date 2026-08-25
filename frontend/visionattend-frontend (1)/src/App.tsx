@@ -10,6 +10,7 @@ import AdminAttendancePage from "./pages/AdminAttendancePage";
 import AdminStudentsPage from "./pages/AdminStudentsPage";
 import AdminCalendarPage from "./pages/AdminCalendarPage";
 import AdminSchedulePage from "./pages/AdminSchedulePage";
+import AdminLeavePage from "./pages/AdminLeavePage";
 import StudentDashboardPage from "./pages/StudentDashboardPage";
 import StudentAttendancePage from "./pages/StudentAttendancePage";
 import StudentCalendarPage from "./pages/StudentCalendarPage";
@@ -28,6 +29,7 @@ export default function App() {
     <Route path="/admin/students" element={<ProtectedRoute requiredRole="admin"><AdminStudentsPage /></ProtectedRoute>} />
     <Route path="/admin/calendar" element={<ProtectedRoute requiredRole="admin"><AdminCalendarPage /></ProtectedRoute>} />
     <Route path="/admin/schedule" element={<ProtectedRoute requiredRole="admin"><AdminSchedulePage /></ProtectedRoute>} />
+    <Route path="/admin/leave" element={<ProtectedRoute requiredRole="admin"><AdminLeavePage /></ProtectedRoute>} />
     <Route path="/student" element={<ProtectedRoute requiredRole="student"><StudentDashboardPage /></ProtectedRoute>} />
     <Route path="/student/attendance" element={<ProtectedRoute requiredRole="student"><StudentAttendancePage /></ProtectedRoute>} />
     <Route path="/student/calendar" element={<ProtectedRoute requiredRole="student"><StudentCalendarPage /></ProtectedRoute>} />
