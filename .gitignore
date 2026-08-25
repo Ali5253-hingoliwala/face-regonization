@@ -7,3 +7,5 @@ venv/
 trained_models/ 
 datasets/
 .env
+
+security_test.py
