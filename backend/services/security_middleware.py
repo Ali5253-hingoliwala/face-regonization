@@ -38,13 +38,16 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.failures = defaultdict(int)
         self.failure_until = defaultdict(float)
 
-        # Register the portal routes when the application middleware stack is
-        # built. This keeps the leave/notification API in its own module while
-        # preserving the existing backend entry point.
+        # BaseHTTPMiddleware receives the Starlette Router as its wrapped app.
+        # Extend that router with the leave/notification routes before requests
+        # are dispatched, keeping the existing main.py entry point unchanged.
         try:
             from leave_routes import router as leave_router
-            if not any(getattr(route, "path", None) == "/leave" for route in app.routes):
-                app.include_router(leave_router)
+            target = getattr(app, "router", app)
+            existing_paths = {getattr(route, "path", None) for route in target.routes}
+            for route in leave_router.routes:
+                if route.path not in existing_paths:
+                    target.routes.append(route)
         except Exception as exc:
             print(f"[SECURITY] Leave route registration warning: {exc}")
 
