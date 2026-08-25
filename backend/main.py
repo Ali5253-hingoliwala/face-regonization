@@ -213,18 +213,6 @@ def mark_absentees(admin=Depends(require_admin)):
     marked_absent = _mark_session_absentees(session); return {"session_id": session["session_id"], "date": session["start_time"].strftime("%Y-%m-%d"), "marked_absent": marked_absent, "count": len(marked_absent)}
 
 
-class StudentFaceRequest(BaseModel):
-    student_id: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
-    name: str = Field(min_length=2, max_length=100)
-    face_image: str = Field(min_length=1, max_length=7000000)
-
-@app.post("/students")
-def add_student(request: StudentFaceRequest, admin=Depends(require_admin)):
-    student_id = request.student_id.strip(); name = request.name.strip()
-    if not student_id or not name: raise HTTPException(status_code=422, detail="Student ID and name are required.")
-    if face_database.get_person(student_id) is not None: raise HTTPException(status_code=409, detail="A face is already registered for this student ID.")
-    embedding = _capture_embedding(request.face_image); face_database.add_person(student_id, name, embedding); return {"success": True, "student_id": student_id, "name": name, "face_registered": True}
-
 @app.get("/students")
 def get_all_students(admin=Depends(require_admin)):
     people = face_database.get_all(); students = [{"student_id": sid, "name": person["name"]} for sid, person in people.items()]; return {"count": len(students), "students": students}
