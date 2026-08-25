@@ -2,6 +2,7 @@ import { BarChart3, CalendarDays, FileText, LayoutDashboard, LogOut, MoreHorizon
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useEffect, useMemo, useState } from "react";
+import NotificationCenter from "./NotificationCenter";
 
 const links = [
   { label: "Dashboard", to: "/student", icon: LayoutDashboard },
@@ -46,6 +47,7 @@ export default function StudentSidebar() {
         <div className="min-w-0"><p className="hidden font-mono text-[9px] uppercase tracking-[0.2em] text-accent sm:block">VisionAttend · Student Portal</p><h1 className="truncate font-display text-lg font-semibold sm:text-xl">{title}</h1></div>
         <div className="ml-auto flex items-center gap-2">
           <div className="hidden items-center gap-2 rounded-full border border-line bg-panel px-3 py-1.5 text-[11px] text-ink-muted md:flex"><span className="h-2 w-2 animate-pulse rounded-full bg-accent" />AI Attendance System</div>
+          <NotificationCenter />
           <button onClick={toggleTheme} aria-label="Toggle theme" className="flex h-10 w-10 items-center justify-center rounded-xl border border-line bg-panel text-ink-muted transition hover:bg-panel-hover hover:text-ink">{theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}</button>
           <div className="relative hidden sm:block" data-profile-menu>
             <button type="button" onClick={() => setProfileOpen(v => !v)} className="flex h-10 items-center gap-2 rounded-xl border border-line bg-panel px-2.5 text-sm text-ink-muted transition hover:bg-panel-hover"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-xs font-semibold text-accent">{(name || "S").slice(0, 1).toUpperCase()}</span><span className="max-w-24 truncate">{name || "Student"}</span><ChevronDown size={14} /></button>
