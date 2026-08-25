@@ -45,7 +45,7 @@ def hash_password(password: str):
 def verify_password(password: str, password_hash: str):
     try:
         return bcrypt.checkpw(_password_bytes(password), password_hash.encode("utf-8"))
-    except (ValueError, TypeError, bcrypt.InvalidSalt):
+    except (ValueError, TypeError):
         return False
 
 
