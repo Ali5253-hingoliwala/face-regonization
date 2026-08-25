@@ -12,6 +12,7 @@ import AdminCalendarPage from "./pages/AdminCalendarPage";
 import AdminSchedulePage from "./pages/AdminSchedulePage";
 import StudentDashboardPage from "./pages/StudentDashboardPage";
 import ProfilePage from "./pages/ProfilePage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 export default function App() {
   return <AuthProvider><BrowserRouter><Routes>
@@ -26,5 +27,6 @@ export default function App() {
     <Route path="/admin/schedule" element={<ProtectedRoute requiredRole="admin"><AdminSchedulePage /></ProtectedRoute>} />
     <Route path="/student" element={<ProtectedRoute requiredRole="student"><StudentDashboardPage /></ProtectedRoute>} />
     <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+    <Route path="*" element={<NotFoundPage />} />
   </Routes></BrowserRouter></AuthProvider>;
 }
