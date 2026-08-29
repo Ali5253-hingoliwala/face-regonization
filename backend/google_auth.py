@@ -15,8 +15,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
 RECOGNITION_DIR = PROJECT_ROOT / "ml" / "recognition"
 ATTENDANCE_DIR = PROJECT_ROOT / "ml" / "attendance"
-sys.path.append(str(RECOGNITION_DIR))
-sys.path.append(str(ATTENDANCE_DIR))
+sys.path.append(str(RECOGNITION_DIR)); sys.path.append(str(ATTENDANCE_DIR))
 
 from database import FaceDatabase
 from recognizer import FaceRecognizer
@@ -24,7 +23,7 @@ from recognizer import FaceRecognizer
 try:
     from google.auth.transport import requests as google_requests
     from google.oauth2 import id_token
-except ImportError:  # pragma: no cover - dependency is declared in requirements
+except ImportError:
     google_requests = None
     id_token = None
 
@@ -32,7 +31,6 @@ router = APIRouter()
 user_manager = UserManager()
 face_database = FaceDatabase()
 face_recognizer = None
-
 ALLOWED_GENDERS = {"male", "female", "prefer not to say"}
 
 
@@ -65,10 +63,8 @@ def _capture_embedding(image_data: str):
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Invalid face image.") from exc
-
     if frame is None:
         raise HTTPException(status_code=400, detail="Invalid face image.")
-
     embedding, face_count = _get_face_recognizer().get_single_face_embedding(frame)
     if face_count == 0:
         raise HTTPException(status_code=422, detail="No face detected. Please position one face clearly in the camera.")
@@ -83,12 +79,10 @@ def _verify_google_credential(credential: str):
         raise HTTPException(status_code=503, detail="Google Sign-In is not configured on this server yet.")
     if id_token is None or google_requests is None:
         raise HTTPException(status_code=503, detail="Google authentication dependency is not installed on the server.")
-
     try:
         info = id_token.verify_oauth2_token(credential, google_requests.Request(), client_id)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="Invalid or expired Google credential.") from exc
-
     if info.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
         raise HTTPException(status_code=401, detail="Invalid Google credential issuer.")
     if not info.get("sub") or not info.get("email"):
@@ -100,19 +94,8 @@ def _verify_google_credential(credential: str):
 
 def _token_for(user):
     user_manager.mark_login(user["username"])
-    token = create_access_token(
-        username=user["username"],
-        role=user["role"],
-        student_id=user.get("student_id"),
-        name=user.get("name"),
-    )
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "role": user["role"],
-        "name": user.get("name"),
-        "student_id": user.get("student_id"),
-    }
+    token = create_access_token(username=user["username"], role=user["role"], student_id=user.get("student_id"), name=user.get("name"))
+    return {"access_token": token, "token_type": "bearer", "role": user["role"], "name": user.get("name"), "student_id": user.get("student_id")}
 
 
 @router.post("/auth/google")
@@ -121,32 +104,18 @@ def google_auth(request: GoogleAuthRequest):
     google_sub = info["sub"]
     email = info["email"].strip().lower()
 
-    # Existing Google-linked account: authenticate immediately.
     user = user_manager.get_user_by_google_sub(google_sub)
     if user is not None:
         if not user.get("is_active", True):
             raise HTTPException(status_code=403, detail="This account is inactive. Please contact an administrator.")
         return {"success": True, "onboarding_required": False, **_token_for(user)}
 
-    # A verified email can identify an existing local account, but we do not
-    # silently take it over. The user must explicitly link it from the account
-    # security flow later.
     existing_email_user = user_manager.get_user_by_email(email)
     if existing_email_user is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="An account already exists with this Google email. Log in with your existing account and link Google from Security.",
-        )
+        raise HTTPException(status_code=409, detail="An account already exists with this Google email. Log in with your existing account and link Google from Security.")
 
-    # First-time Google user: return only the minimum profile needed for the
-    # client to show the onboarding form. No account is created yet.
     if not all([request.username, request.student_id, request.password, request.gender, request.face_image]):
-        return {
-            "success": True,
-            "onboarding_required": True,
-            "email": email,
-            "suggested_name": info.get("name") or info.get("given_name") or "",
-        }
+        return {"success": True, "onboarding_required": True, "email": email, "suggested_name": info.get("name") or info.get("given_name") or ""}
 
     username = request.username.strip()
     student_id = request.student_id.strip()
@@ -155,39 +124,24 @@ def google_auth(request: GoogleAuthRequest):
 
     if gender not in ALLOWED_GENDERS:
         raise HTTPException(status_code=422, detail="Gender must be Male, Female, or Prefer not to say.")
-    if username != student_id:
-        raise HTTPException(status_code=422, detail="Username and Student ID must currently match for student accounts.")
     if len(password.encode("utf-8")) > 72:
         raise HTTPException(status_code=422, detail="Password is too long.")
     if user_manager.get_user(username) is not None:
-        raise HTTPException(status_code=409, detail="That username or Student ID is already registered.")
+        raise HTTPException(status_code=409, detail="That username is already registered.")
+    if user_manager.collection.find_one({"student_id": student_id, "role": "student"}):
+        raise HTTPException(status_code=409, detail="That Student ID is already registered.")
     if face_database.get_all().get(student_id) is not None:
         raise HTTPException(status_code=409, detail="That Student ID already has a face registration.")
 
     embedding = _capture_embedding(request.face_image)
     name = (info.get("name") or info.get("given_name") or username).strip()
-
     face_database.add_person(student_id, name, embedding)
     try:
-        user = user_manager.create_user(
-            username=username,
-            password_hash=hash_password(password),
-            role="student",
-            student_id=student_id,
-            name=name,
-            email=email,
-            email_verified=True,
-            gender=gender,
-            auth_provider="both",
-            google_sub=google_sub,
-        )
+        user = user_manager.create_user(username=username, password_hash=hash_password(password), role="student", student_id=student_id, name=name, email=email, email_verified=True, gender=gender, auth_provider="both", google_sub=google_sub)
     except ValueError as exc:
-        # Avoid leaving a face record behind if account creation fails.
         face_database.delete_person(student_id)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
     if user is None:
         face_database.delete_person(student_id)
         raise HTTPException(status_code=409, detail="An account for this student already exists.")
-
     return {"success": True, "onboarding_required": False, "new_account": True, **_token_for(user)}
