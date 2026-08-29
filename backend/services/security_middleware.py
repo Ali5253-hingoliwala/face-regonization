@@ -70,16 +70,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.failures = defaultdict(int)
         self.failure_until = defaultdict(float)
 
-        try:
-            from leave_routes import router as leave_router
-            target = getattr(app, "router", app)
-            existing_paths = {getattr(route, "path", None) for route in target.routes}
-            for route in leave_router.routes:
-                if route.path not in existing_paths:
-                    target.routes.append(route)
-        except Exception as exc:
-            print(f"[SECURITY] Leave route registration warning: {exc}")
-
     @staticmethod
     def _ip(request):
         forwarded = request.headers.get("x-forwarded-for")
