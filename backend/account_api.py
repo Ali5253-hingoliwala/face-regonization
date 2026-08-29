@@ -103,6 +103,11 @@ def update_account_photo(request:PhotoUpdate,user=Depends(get_current_user)):
     if len(raw)>2*1024*1024: raise HTTPException(413,"Profile photo must be 2 MB or smaller.")
     if not raw.startswith((b"\xff\xd8\xff",b"\x89PNG\r\n\x1a\n",b"RIFF")): raise HTTPException(400,"Invalid image file.")
     users.update_profile_photo(user["sub"],data); return {"success":True}
+@router.delete("/account/photo")
+def remove_account_photo(user=Depends(get_current_user)):
+    account=_account(user)
+    users.collection.update_one({"username":account["username"]},{"$unset":{"profile_photo":""},"$set":{"updated_at":_now()}})
+    return {"success":True,"profile_photo":None}
 @router.get("/account/security")
 def account_security(user=Depends(get_current_user)):
     account=_account(user); return {"email":account.get("email"),"email_verified":bool(account.get("email_verified")),"google_linked":bool(account.get("google_sub")),"auth_provider":account.get("auth_provider","local"),"two_factor_enabled":bool(account.get("two_factor_enabled",False)),"active":account.get("is_active",True),"last_login":account.get("last_login")}
