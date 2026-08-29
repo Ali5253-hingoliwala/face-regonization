@@ -6,8 +6,10 @@ from pydantic import BaseModel, Field
 from auth_utils import get_current_user, require_admin
 from backend.leave_manager import LeaveManager
 from ml.utils.mongo_client import get_database
+from backend.google_auth import router as google_auth_router
 
 router = APIRouter()
+router.include_router(google_auth_router)
 leave_manager = LeaveManager(get_database())
 
 
