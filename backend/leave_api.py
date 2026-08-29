@@ -43,20 +43,8 @@ def apply_leave(request: LeaveRequestBody, user=Depends(get_current_user)):
     try:
         leave_date = date.fromisoformat(request.leave_date)
         end_date = date.fromisoformat(request.end_date) if request.end_date else None
-        result = leave_manager.create_request(
-            student_id,
-            request.leave_type,
-            request.duration,
-            leave_date,
-            request.reason,
-            request.half_day,
-            end_date,
-        )
-        return {
-            "success": True,
-            "request": result,
-            "balances": leave_manager.get_balance(student_id),
-        }
+        result = leave_manager.create_request(student_id, request.leave_type, request.duration, leave_date, request.reason, request.half_day, end_date)
+        return {"success": True, "request": result, "balances": leave_manager.get_balance(student_id)}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -64,11 +52,31 @@ def apply_leave(request: LeaveRequestBody, user=Depends(get_current_user)):
 @router.get("/leave/mine")
 def get_my_leave_requests(user=Depends(get_current_user)):
     student_id = _student(user)
-    return {
-        "student_id": student_id,
-        "requests": leave_manager.get_student_requests(student_id),
-        "balances": leave_manager.get_balance(student_id),
-    }
+    return {"student_id": student_id, "requests": leave_manager.get_student_requests(student_id), "balances": leave_manager.get_balance(student_id)}
+
+
+@router.get("/notifications")
+def get_notifications(user=Depends(get_current_user)):
+    db = get_database()
+    collection = db["notifications"]
+    if user.get("role") == "admin":
+        query = {"recipient_role": "admin"}
+    elif user.get("role") == "student" and user.get("student_id"):
+        query = {"student_id": user["student_id"]}
+    else:
+        return {"notifications": []}
+
+    docs = list(collection.find(query).sort("created_at", -1).limit(50))
+    notifications = []
+    for doc in docs:
+        notifications.append({
+            "id": doc.get("notification_id") or str(doc["_id"]),
+            "title": doc.get("title", "Notification"),
+            "text": doc.get("text", ""),
+            "kind": doc.get("kind", "system"),
+            "createdAt": int(doc.get("created_at").timestamp() * 1000) if doc.get("created_at") else None,
+        })
+    return {"notifications": notifications}
 
 
 @router.get("/admin/leaves")
@@ -76,26 +84,15 @@ def get_admin_leaves(status: str = "all", admin=Depends(require_admin)):
     requests = leave_manager.get_all_requests(status)
     users = get_database()["users"]
     for item in requests:
-        account = users.find_one(
-            {"student_id": item.get("student_id"), "role": "student"},
-            {"_id": 0, "password_hash": 0},
-        )
+        account = users.find_one({"student_id": item.get("student_id"), "role": "student"}, {"_id": 0, "password_hash": 0})
         item["student_name"] = account.get("name") if account else item.get("student_id")
     return {"count": len(requests), "requests": requests}
 
 
 @router.put("/admin/leaves/{leave_id}")
-def decide_leave(
-    leave_id: str,
-    request: LeaveDecisionBody,
-    admin=Depends(require_admin),
-):
+def decide_leave(leave_id: str, request: LeaveDecisionBody, admin=Depends(require_admin)):
     try:
-        updated = leave_manager.update_request(
-            leave_id,
-            request.status,
-            request.admin_note or "",
-        )
+        updated = leave_manager.update_request(leave_id, request.status, request.admin_note or "")
         return {"success": True, "request": updated}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
