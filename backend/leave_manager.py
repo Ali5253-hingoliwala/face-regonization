@@ -25,10 +25,23 @@ class LeaveManager:
     def __init__(self, db):
         self.balances = db["leave_balances"]
         self.requests = db["leave_requests"]
+        self.notifications = db["notifications"]
         self.balances.create_index("student_id", unique=True)
         self.requests.create_index([("student_id", 1), ("start_date", -1)])
         self.requests.create_index([("student_id", 1), ("leave_date", -1)])
         self.requests.create_index([("status", 1), ("start_date", -1)])
+        self.notifications.create_index([("student_id", 1), ("created_at", -1)])
+        self.notifications.create_index([("recipient_role", 1), ("created_at", -1)])
+
+    def _notify(self, *, title: str, text: str, kind: str, student_id: Optional[str] = None, recipient_role: Optional[str] = None, notification_id: Optional[str] = None):
+        doc = {"title": title, "text": text, "kind": kind, "created_at": datetime.utcnow()}
+        if student_id:
+            doc["student_id"] = student_id
+        if recipient_role:
+            doc["recipient_role"] = recipient_role
+        if notification_id:
+            doc["notification_id"] = notification_id
+        self.notifications.insert_one(doc)
 
     def _ensure_balance(self, student_id: str):
         existing = self.balances.find_one({"student_id": student_id}, {"_id": 0})
@@ -44,11 +57,7 @@ class LeaveManager:
         for label, field in TYPE_TO_FIELD.items():
             entitlement = DEFAULT_BALANCES[field]
             remaining = float(doc.get(field, entitlement))
-            result[label] = {
-                "entitlement": entitlement,
-                "remaining": remaining,
-                "used": round(entitlement - remaining, 1),
-            }
+            result[label] = {"entitlement": entitlement, "remaining": remaining, "used": round(entitlement - remaining, 1)}
         return result
 
     def _find_overlap(self, student_id: str, start_date: date, end_date: date):
@@ -64,16 +73,7 @@ class LeaveManager:
             ],
         })
 
-    def create_request(
-        self,
-        student_id: str,
-        leave_type: str,
-        duration: str,
-        leave_date: date,
-        reason: str,
-        half_day: Optional[str] = None,
-        end_date: Optional[date] = None,
-    ):
+    def create_request(self, student_id: str, leave_type: str, duration: str, leave_date: date, reason: str, half_day: Optional[str] = None, end_date: Optional[date] = None):
         if leave_type not in TYPE_TO_FIELD:
             raise ValueError("Invalid leave type.")
         if duration not in {"Full Day", "Half Day"}:
@@ -107,12 +107,7 @@ class LeaveManager:
         if float(balance.get(field, 0)) < amount:
             raise ValueError(f"Insufficient {leave_type} balance. You need {amount:g} day(s).")
 
-        updated = self.balances.find_one_and_update(
-            {"student_id": student_id, field: {"$gte": amount}},
-            {"$inc": {field: -amount}, "$set": {"updated_at": datetime.utcnow()}},
-            return_document=ReturnDocument.AFTER,
-            projection={"_id": 0},
-        )
+        updated = self.balances.find_one_and_update({"student_id": student_id, field: {"$gte": amount}}, {"$inc": {field: -amount}, "$set": {"updated_at": datetime.utcnow()}}, return_document=ReturnDocument.AFTER, projection={"_id": 0})
         if not updated:
             raise ValueError(f"Insufficient {leave_type} balance. You need {amount:g} day(s).")
 
@@ -134,13 +129,13 @@ class LeaveManager:
         try:
             inserted = self.requests.insert_one(doc)
         except Exception:
-            self.balances.update_one(
-                {"student_id": student_id},
-                {"$inc": {field: amount}, "$set": {"updated_at": datetime.utcnow()}},
-            )
+            self.balances.update_one({"student_id": student_id}, {"$inc": {field: amount}, "$set": {"updated_at": datetime.utcnow()}})
             raise
         doc["leave_id"] = str(inserted.inserted_id)
         doc.pop("_id", None)
+
+        range_text = start_date.strftime("%d %b %Y") if start_date == end_date else f"{start_date.strftime('%d %b %Y')} to {end_date.strftime('%d %b %Y')}"
+        self._notify(title="New leave request", text=f"Student {student_id} submitted {leave_type} for {range_text} ({amount:g} day{'s' if amount != 1 else ''}).", kind="system", recipient_role="admin", notification_id=f"leave-submitted-{doc['leave_id']}")
         return doc
 
     def get_student_requests(self, student_id: str):
@@ -178,17 +173,19 @@ class LeaveManager:
         if request.get("status") != "Pending":
             raise ValueError("This leave request has already been processed.")
 
-        self.requests.update_one(
-            {"_id": oid},
-            {"$set": {"status": status, "admin_note": admin_note.strip(), "updated_at": datetime.utcnow()}},
-        )
+        clean_note = admin_note.strip()
+        self.requests.update_one({"_id": oid}, {"$set": {"status": status, "admin_note": clean_note, "updated_at": datetime.utcnow()}})
         if status == "Rejected":
             field = TYPE_TO_FIELD.get(request.get("leave_type"))
             if field:
-                self.balances.update_one(
-                    {"student_id": request["student_id"]},
-                    {"$inc": {field: float(request.get("amount", 1))}, "$set": {"updated_at": datetime.utcnow()}},
-                )
+                self.balances.update_one({"student_id": request["student_id"]}, {"$inc": {field: float(request.get("amount", 1))}, "$set": {"updated_at": datetime.utcnow()}})
+
+        start = request.get("start_date") or request.get("leave_date")
+        end = request.get("end_date") or request.get("leave_date")
+        range_text = start if start == end else f"{start} to {end}"
+        note_text = f" Admin note: {clean_note}" if clean_note else ""
+        self._notify(title=f"Leave request {status.lower()}", text=f"Your {request.get('leave_type', 'leave')} request for {range_text} was {status.lower()}.{note_text}", kind="system", student_id=request["student_id"], notification_id=f"leave-decision-{leave_id}-{status.lower()}")
+
         result = self.requests.find_one({"_id": oid}, {"_id": 0})
         result["leave_id"] = leave_id
         result.setdefault("start_date", result.get("leave_date"))
