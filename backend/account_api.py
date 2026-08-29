@@ -16,6 +16,10 @@ class PhotoUpdate(BaseModel): image:str=Field(min_length=1,max_length=3500000)
 class VerifyCode(BaseModel): code:str=Field(min_length=6,max_length=6,pattern=r"^\d{6}$")
 class LoginRequest(BaseModel): username:str=Field(min_length=1,max_length=64); password:str=Field(min_length=1,max_length=72)
 def _now(): return datetime.now(timezone.utc)
+def _utc(value):
+    if value is None: return None
+    if value.tzinfo is None: return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 def _hash(value): return hashlib.sha256(value.encode("utf-8")).hexdigest()
 def _account(user):
     account=users.get_user(user["sub"])
@@ -25,7 +29,7 @@ def _frontend_url(): return os.getenv("FRONTEND_URL","http://localhost:5173").rs
 def _send_verification(account):
     email=account.get("email")
     if not email: raise HTTPException(400,"Add an email address before verifying it.")
-    now=_now(); last=account.get("verification_last_sent_at")
+    now=_now(); last=_utc(account.get("verification_last_sent_at"))
     if last and (now-last).total_seconds()<RESEND_COOLDOWN: raise HTTPException(429,f"Please wait {max(1,RESEND_COOLDOWN-int((now-last).total_seconds()))} seconds before requesting another email.")
     raw=secrets.token_urlsafe(32)
     users.collection.update_one({"username":account["username"]},{"$set":{"email_verification_token_hash":_hash(raw),"email_verification_expires_at":now+timedelta(minutes=VERIFY_MINUTES),"verification_last_sent_at":now,"updated_at":now}})
@@ -39,7 +43,7 @@ def _send_verification(account):
 def start_2fa_challenge(account):
     email=account.get("email")
     if not email or not account.get("email_verified"): raise HTTPException(403,"A verified email is required for 2FA.")
-    now=_now(); recent=account.get("two_factor_last_sent_at")
+    now=_now(); recent=_utc(account.get("two_factor_last_sent_at"))
     if recent and (now-recent).total_seconds()<RESEND_COOLDOWN: raise HTTPException(429,f"Please wait {max(1,RESEND_COOLDOWN-int((now-recent).total_seconds()))} seconds before requesting another OTP.")
     challenge=secrets.token_urlsafe(32); otp=f"{secrets.randbelow(1000000):06d}"
     users.collection.update_one({"username":account["username"]},{"$set":{"two_factor_challenge_hash":_hash(challenge),"two_factor_otp_hash":_hash(otp),"two_factor_otp_expires_at":now+timedelta(minutes=OTP_MINUTES),"two_factor_attempts":0,"two_factor_last_sent_at":now,"updated_at":now}})
@@ -50,7 +54,8 @@ def start_2fa_challenge(account):
 def complete_2fa_challenge(challenge,code):
     account=users.collection.find_one({"two_factor_challenge_hash":_hash(challenge)})
     if not account: raise HTTPException(401,"Invalid or expired 2FA challenge.")
-    if not account.get("two_factor_otp_expires_at") or account["two_factor_otp_expires_at"]<=_now(): raise HTTPException(401,"The 2FA code has expired. Please log in again.")
+    expires_at=_utc(account.get("two_factor_otp_expires_at"))
+    if not expires_at or expires_at<=_now(): raise HTTPException(401,"The 2FA code has expired. Please log in again.")
     if int(account.get("two_factor_attempts",0))>=OTP_MAX_ATTEMPTS: raise HTTPException(429,"Too many incorrect 2FA attempts. Please log in again.")
     if not secrets.compare_digest(account.get("two_factor_otp_hash",""),_hash(code)):
         users.collection.update_one({"_id":account["_id"]},{"$inc":{"two_factor_attempts":1}}); raise HTTPException(401,"Incorrect 2FA code.")
@@ -114,7 +119,8 @@ def resend_email_verification(user=Depends(get_current_user)):
 @router.get("/account/email/verify")
 def verify_email(token:str):
     account=users.collection.find_one({"email_verification_token_hash":_hash(token)})
-    if not account or not account.get("email_verification_expires_at") or account["email_verification_expires_at"]<=_now(): raise HTTPException(400,"Invalid or expired verification link.")
+    expires_at=_utc(account.get("email_verification_expires_at")) if account else None
+    if not account or not expires_at or expires_at<=_now(): raise HTTPException(400,"Invalid or expired verification link.")
     users.collection.update_one({"_id":account["_id"]},{"$set":{"email_verified":True,"updated_at":_now()},"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}})
     return {"success":True,"message":"Email verified successfully."}
 @router.post("/account/2fa/enable")
