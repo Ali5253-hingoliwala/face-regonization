@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth_utils import get_current_user, require_admin
-from leave_manager import LeaveManager
+from backend.leave_manager import LeaveManager
 from ml.utils.mongo_client import get_database
 
 router = APIRouter()
@@ -41,7 +41,8 @@ def apply_leave(request: LeaveRequestBody, user=Depends(get_current_user)):
     student_id = _student(user)
     try:
         leave_date = date.fromisoformat(request.leave_date)
-        return {"success": True, "request": leave_manager.create_request(student_id, request.leave_type, request.duration, leave_date, request.reason, request.half_day)}
+        result = leave_manager.create_request(student_id, request.leave_type, request.duration, leave_date, request.reason, request.half_day)
+        return {"success": True, "request": result, "balances": leave_manager.get_balance(student_id)}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -49,13 +50,12 @@ def apply_leave(request: LeaveRequestBody, user=Depends(get_current_user)):
 @router.get("/leave/mine")
 def get_my_leave_requests(user=Depends(get_current_user)):
     student_id = _student(user)
-    return {"student_id": student_id, "requests": leave_manager.get_student_requests(student_id)}
+    return {"student_id": student_id, "requests": leave_manager.get_student_requests(student_id), "balances": leave_manager.get_balance(student_id)}
 
 
 @router.get("/admin/leaves")
 def get_admin_leaves(status: str = "all", admin=Depends(require_admin)):
     requests = leave_manager.get_all_requests(status)
-    # Enrich with names from the users collection without exposing passwords.
     users = get_database()["users"]
     for item in requests:
         account = users.find_one({"student_id": item.get("student_id"), "role": "student"}, {"_id": 0, "password_hash": 0})
