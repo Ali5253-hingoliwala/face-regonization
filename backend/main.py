@@ -29,7 +29,14 @@ from leave_api import router as leave_router
 
 app = FastAPI(title="VisionAttend AI API", version="1.1.0")
 
-cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"], allow_credentials=True)
 app.add_middleware(SecurityMiddleware)
 app.include_router(leave_router)
@@ -68,7 +75,8 @@ def _capture_embedding(image_data):
 
 def _launch_pipeline_if_not_running():
     global pipeline_process
-    if pipeline_process is None or pipeline_process.poll() is not None: pipeline_process = subprocess.Popen([sys.executable, str(PIPELINE_SCRIPT)]); return True
+    if pipeline_process is None or pipeline_process.poll() is not None:
+        pipeline_process = subprocess.Popen([sys.executable, str(PIPELINE_SCRIPT)]); return True
     return False
 
 
@@ -201,7 +209,8 @@ def get_attendance_by_date(date: str, admin=Depends(require_admin)):
 def clear_attendance_history(admin=Depends(require_admin)):
     active = session_manager.get_current_session()
     if active is not None: raise HTTPException(status_code=409, detail="Stop the active attendance session before clearing history.")
-    attendance_result = attendance_manager.collection.delete_many({}); session_result = session_manager.collection.delete_many({"status": "closed"})
+    attendance_result = attendance_manager.collection.delete_many({})
+    session_result = session_manager.collection.delete_many({"status": "closed"})
     return {"success": True, "attendance_deleted": attendance_result.deleted_count, "sessions_deleted": session_result.deleted_count, "students_preserved": True, "accounts_preserved": True, "face_embeddings_preserved": True}
 
 @app.post("/attendance/mark-absentees")
@@ -272,48 +281,56 @@ def schedule_session(request: ScheduleSessionRequest, admin=Depends(require_admi
     session = session_manager.create_session(name=request.name.strip(), planned_start_time=planned_time, duration_minutes=request.duration_minutes, late_after_minutes=request.late_after_minutes)
     return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"]}
 
-@app.post("/session/start")
-def start_session(request: StartSessionRequest, admin=Depends(require_admin)):
-    session = session_manager.get_current_session()
-    if session is not None: raise HTTPException(status_code=409, detail="A session is already active or scheduled.")
-    session = session_manager.start_session(name=request.name.strip(), duration_minutes=request.duration_minutes, late_after_minutes=request.late_after_minutes); _launch_pipeline_if_not_running()
-    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"]}
-
-@app.get("/session/current")
-def current_session(admin=Depends(require_admin)):
-    _synchronize_dead_pipeline(); session = session_manager.get_current_session()
-    if session is None: return {"active": False, "session": None}
-    return {"active": True, "session": {**session, "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat() if session.get("planned_start_time") else None}}
-
-@app.post("/session/{session_id}/cancel")
-def cancel_scheduled_session(session_id: str, admin=Depends(require_admin)):
-    session = session_manager.get_session(session_id)
-    if session is None: raise HTTPException(status_code=404, detail="Session not found.")
-    if session.get("status") != "scheduled": raise HTTPException(status_code=409, detail="Only scheduled sessions can be cancelled.")
-    session_manager.cancel_session(session_id); return {"success": True, "session_id": session_id, "status": "cancelled"}
-
-@app.get("/session/{session_id}")
-def get_session(session_id: str, admin=Depends(require_admin)):
-    session = session_manager.get_session(session_id)
-    if session is None: raise HTTPException(status_code=404, detail="Session not found.")
-    return {**session, "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat() if session.get("planned_start_time") else None}
-
-@app.post("/session/{session_id}/start")
-def start_scheduled_session(session_id: str, admin=Depends(require_admin)):
-    session = session_manager.get_session(session_id)
-    if session is None: raise HTTPException(status_code=404, detail="Session not found.")
-    if session.get("status") != "scheduled": raise HTTPException(status_code=409, detail="Only scheduled sessions can be started.")
-    active = session_manager.get_current_session()
-    if active is not None: raise HTTPException(status_code=409, detail="Another session is already active or scheduled.")
-    session = session_manager.start_scheduled_session(session_id); _launch_pipeline_if_not_running()
-    return {**session, "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat() if session.get("planned_start_time") else None}
-
-@app.post("/session/{session_id}/stop")
-def stop_specific_session(session_id: str, admin=Depends(require_admin)):
-    session = session_manager.get_session(session_id)
-    if session is None: raise HTTPException(status_code=404, detail="Session not found.")
-    _close_session_and_pipeline(session); return {"success": True, "session_id": session_id, "status": "closed"}
+@app.get("/session/scheduled")
+def list_scheduled_sessions(admin=Depends(require_admin)):
+    sessions = session_manager.get_scheduled_sessions(); now = datetime.now(); return {"count": len(sessions), "sessions": [{"session_id": s["session_id"], "name": s["name"], "start_time": s["start_time"].isoformat(), "planned_start_time": s["planned_start_time"].isoformat(), "duration_minutes": s["duration_minutes"], "late_after_minutes": s["late_after_minutes"], "overdue": s["planned_start_time"] < now} for s in sessions]}
 
 @app.get("/session/history")
 def session_history(admin=Depends(require_admin)):
-    sessions = session_manager.get_history(); return {"count": len(sessions), "sessions": [{**session, "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat() if session.get("planned_start_time") else None, "end_time": session["end_time"].isoformat() if session.get("end_time") else None} for session in sessions]}
+    sessions = session_manager.get_session_history(); return {"count": len(sessions), "sessions": [{"session_id": s["session_id"], "name": s["name"], "start_time": s["start_time"].isoformat(), "planned_start_time": s["planned_start_time"].isoformat(), "duration_minutes": s["duration_minutes"], "status": s["status"], "ended_at": s.get("ended_at")} for s in sessions]}
+
+@app.delete("/session/scheduled/{session_id}")
+def cancel_scheduled_session(session_id: str, admin=Depends(require_admin)):
+    result = session_manager.cancel_session(session_id)
+    if not result["success"]: raise HTTPException(status_code=404, detail="Scheduled session not found.")
+    return {"success": True}
+
+@app.post("/session/start")
+def start_session_now(request: StartSessionRequest = StartSessionRequest(), admin=Depends(require_admin)):
+    if session_manager.get_current_session() is not None: raise HTTPException(status_code=409, detail="A session is already active.")
+    session = session_manager.create_session(name=request.name.strip(), planned_start_time=None, duration_minutes=request.duration_minutes, late_after_minutes=request.late_after_minutes); _launch_pipeline_if_not_running()
+    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"], "pipeline_started": True}
+
+@app.post("/session/start/{session_id}")
+def start_scheduled_session(session_id: str, admin=Depends(require_admin)):
+    if session_manager.get_current_session() is not None: raise HTTPException(status_code=409, detail="A session is already active.")
+    result = session_manager.activate_session(session_id)
+    if not result["success"]: raise HTTPException(status_code=404, detail=result.get("message", "Session not found."))
+    _launch_pipeline_if_not_running(); session = result["session"]
+    return {"session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "status": session["status"], "pipeline_started": True}
+
+@app.post("/session/end")
+def end_session(admin=Depends(require_admin)):
+    session = session_manager.get_current_session()
+    if session is None: return {"success": False, "status": "no_active_session", "pipeline_stopped": False}
+    marked_absent = _mark_session_absentees(session); result = session_manager.end_session(session["session_id"])
+    global pipeline_process
+    if pipeline_process is not None and pipeline_process.poll() is None: pipeline_process.terminate()
+    pipeline_process = None
+    return {"success": result["success"], "session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "status": "closed", "pipeline_stopped": True, "marked_absent": marked_absent}
+
+@app.get("/session/current")
+def get_current_session(admin=Depends(require_admin)):
+    _synchronize_dead_pipeline(); session = session_manager.get_current_session()
+    if session is None: return {"active": False, "status": "closed"}
+    now = datetime.now(); elapsed_minutes = (now - session["start_time"]).total_seconds() / 60; remaining_minutes = max(0, session["duration_minutes"] - elapsed_minutes)
+    if remaining_minutes <= 0:
+        marked_absent = _mark_session_absentees(session); session_manager.end_session(session["session_id"])
+        global pipeline_process
+        if pipeline_process is not None and pipeline_process.poll() is None: pipeline_process.terminate()
+        pipeline_process = None
+        return {"active": False, "status": "closed", "session_id": session["session_id"], "marked_absent": marked_absent}
+    return {"active": True, "status": "active", "session_id": session["session_id"], "name": session["name"], "start_time": session["start_time"].isoformat(), "planned_start_time": session["planned_start_time"].isoformat(), "duration_minutes": session["duration_minutes"], "late_after_minutes": session["late_after_minutes"], "elapsed_minutes": round(elapsed_minutes, 1), "remaining_minutes": round(remaining_minutes, 1)}
+
+if __name__ == "__main__":
+    import uvicorn; uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
