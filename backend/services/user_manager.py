@@ -60,8 +60,10 @@ class UserManager:
             {"$set": {"last_login": None}},
         )
 
-        # Username already existed as the primary local-login identifier.
-        self.collection.create_index("username", unique=True, name="username_unique")
+        # Preserve the existing username_1 index created by older versions.
+        # Calling create_index without a custom name resolves to username_1,
+        # so startup remains compatible with the existing MongoDB collection.
+        self.collection.create_index("username", unique=True)
 
         # Unique only for real values. Partial indexes avoid collisions between
         # multiple legacy/local accounts whose email or Google subject is null.
@@ -138,8 +140,6 @@ class UserManager:
         try:
             self.collection.insert_one(dict(doc))
         except DuplicateKeyError as exc:
-            # Convert a database uniqueness race into the same predictable
-            # application-level error used by the explicit checks above.
             raise ValueError("An account with one of these identifiers already exists.") from exc
         return doc
 
