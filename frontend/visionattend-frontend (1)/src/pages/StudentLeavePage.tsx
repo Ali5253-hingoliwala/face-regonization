@@ -7,7 +7,15 @@ type Balance = { entitlement: number; used: number; remaining: number };
 type BalanceResponse = { balances: Record<string, Balance> };
 type LeaveType = "Casual Leave" | "Earned Leave" | "Sick Leave" | "Emergency Leave";
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Use the browser's local calendar date instead of UTC so half-day requests
+// stay aligned with the student's actual day.
+const today = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const leaveMeta: Record<LeaveType, { icon: React.ReactNode; tone: "green" | "blue" | "orange" | "purple" }> = {
   "Casual Leave": { icon: <BriefcaseBusiness size={22} />, tone: "green" },
@@ -84,12 +92,19 @@ export default function StudentLeavePage() {
       return;
     }
 
+    const amount = duration === "Half Day" ? 0.5 : 1;
+    if (selectedBalance.remaining < amount) {
+      setError(`Insufficient ${leaveType} balance. You have ${selectedBalance.remaining} day(s) remaining.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const response = await api.post("/leave", {
         leave_type: leaveType,
         duration,
         half_day: duration === "Half Day" ? halfDay : null,
+        // Half-day requests deliberately have no editable date: they are for today.
         leave_date: duration === "Half Day" ? currentDay : leaveDate,
         reason: reason.trim(),
       });
