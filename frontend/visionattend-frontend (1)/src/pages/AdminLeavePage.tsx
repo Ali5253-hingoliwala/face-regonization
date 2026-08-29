@@ -42,7 +42,11 @@ export default function AdminLeavePage() {
     setBusy(item.leave_id);
     setMessage("");
     try {
-      await api.put(`/admin/leaves/${item.leave_id}`, { status, admin_note: note[item.leave_id] || null });
+      // Always send a string. The backend also accepts null for compatibility.
+      await api.put(`/admin/leaves/${item.leave_id}`, {
+        status,
+        admin_note: note[item.leave_id]?.trim() ?? "",
+      });
       setMessage(`Leave request ${status.toLowerCase()} successfully.`);
       await load();
     } catch (error: any) {
