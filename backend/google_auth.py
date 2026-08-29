@@ -5,27 +5,21 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from auth_utils import create_access_token, hash_password
-from user_manager import UserManager
-
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
+load_dotenv(CURRENT_DIR / ".env")
 RECOGNITION_DIR = PROJECT_ROOT / "ml" / "recognition"
 ATTENDANCE_DIR = PROJECT_ROOT / "ml" / "attendance"
 sys.path.append(str(RECOGNITION_DIR)); sys.path.append(str(ATTENDANCE_DIR))
 
+from auth_utils import create_access_token, hash_password
+from user_manager import UserManager
 from database import FaceDatabase
 from recognizer import FaceRecognizer
-
-try:
-    from google.auth.transport import requests as google_requests
-    from google.oauth2 import id_token
-except ImportError:
-    google_requests = None
-    id_token = None
 
 router = APIRouter()
 user_manager = UserManager()
@@ -77,8 +71,11 @@ def _verify_google_credential(credential: str):
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     if not client_id:
         raise HTTPException(status_code=503, detail="Google Sign-In is not configured on this server yet.")
-    if id_token is None or google_requests is None:
-        raise HTTPException(status_code=503, detail="Google authentication dependency is not installed on the server.")
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Google authentication dependency is not installed on the server.") from exc
     try:
         info = id_token.verify_oauth2_token(credential, google_requests.Request(), client_id)
     except ValueError as exc:
