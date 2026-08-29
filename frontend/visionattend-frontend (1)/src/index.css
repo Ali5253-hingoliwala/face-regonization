@@ -36,9 +36,9 @@
 html { background-color: var(--color-bg); transition: background-color .25s ease; }
 body { background-color: var(--color-bg); color: var(--color-ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; transition: background-color .25s ease, color .25s ease; }
 ::selection { background-color: var(--color-accent); color: white; }
+input, select, textarea { color: var(--color-ink); }
+input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opacity: 1; }
 
-/* Every admin page shares the same available-width layout. The sidebar is an overlay,
-   so content never becomes permanently left/right aligned or leaves a blank rail. */
 .portal-active main {
   width: calc(100% - var(--portal-sidebar-offset, 0px)) !important;
   max-width: none !important;
@@ -84,7 +84,7 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 
 .dark body { background-color: var(--color-bg); color: var(--color-ink); }
 .dark input, .dark select, .dark textarea { color: var(--color-ink); }
-.dark input::placeholder, .dark textarea::placeholder { color: var(--color-ink-faint); }
+.dark input::placeholder, .dark textarea::placeholder { color: var(--color-ink-faint); opacity: 1; }
 .dark .bg-white { background-color: var(--color-panel) !important; }
 .dark .bg-green-50 { background-color: #123128 !important; }
 .dark .bg-red-50 { background-color: #351719 !important; }
