@@ -1,6 +1,8 @@
 import json
 import os
 import time
+import urllib.parse
+import urllib.request
 from collections import defaultdict, deque
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -14,8 +16,36 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _verify_turnstile(token: str, remote_ip: str | None) -> tuple[bool, str]:
+    secret = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
+    if not secret:
+        return False, "CAPTCHA is not configured on the server."
+    if not token:
+        return False, "Please complete the CAPTCHA."
+
+    payload = urllib.parse.urlencode({
+        "secret": secret,
+        "response": token,
+        **({"remoteip": remote_ip} if remote_ip else {}),
+    }).encode("utf-8")
+    try:
+        request = urllib.request.Request(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        if result.get("success"):
+            return True, ""
+        return False, "CAPTCHA verification failed. Please try again."
+    except Exception:
+        return False, "CAPTCHA verification service is temporarily unavailable. Please try again."
+
+
 class SecurityMiddleware(BaseHTTPMiddleware):
-    """Defensive API middleware: configurable rate limits and security headers.
+    """Defensive API middleware: CAPTCHA, rate limits and security headers.
 
     Limits are process-local. For a multi-worker production deployment, move the
     counters to Redis so all workers share the same limits.
@@ -40,9 +70,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.failures = defaultdict(int)
         self.failure_until = defaultdict(float)
 
-        # BaseHTTPMiddleware receives the Starlette Router as its wrapped app.
-        # Extend that router with the leave/notification routes before requests
-        # are dispatched, keeping the existing main.py entry point unchanged.
         try:
             from leave_routes import router as leave_router
             target = getattr(app, "router", app)
@@ -81,8 +108,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         is_auth_route = path in {"/auth/login", "/auth/signup"} or path == "/profile/password"
         is_public = path == "/health"
 
-        # Browser CORS preflight requests should not consume the normal API
-        # request bucket. The CORS middleware still validates the origin.
         if request.method == "OPTIONS":
             response = await call_next(request)
             response.headers["X-Content-Type-Options"] = "nosniff"
@@ -98,7 +123,12 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             if path in {"/auth/login", "/auth/signup"}:
                 try:
                     data = json.loads(body or b"{}")
-                    account = str(data.get("username") or data.get("student_id") or "").strip().lower() or None
+                    account = str(data.get("username") or data.get("student_id") or data.get("email") or "").strip().lower() or None
+                    if path == "/auth/login":
+                        captcha_token = str(data.get("captcha_token") or "").strip()
+                        verified, message = _verify_turnstile(captcha_token, ip)
+                        if not verified:
+                            return JSONResponse(status_code=403, content={"detail": message})
                 except (ValueError, TypeError):
                     account = None
 
@@ -118,9 +148,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             if not ok:
                 return self._limited(retry, "Too many requests.")
         elif request.method == "GET" and path in {"/session/history", "/pipeline/status"}:
-            # Dashboard polling is intentionally isolated from the general API
-            # bucket. Otherwise a few normal polling widgets can exhaust the
-            # shared 120/minute limit and make the portal appear broken.
             ok, retry = self._allow(self.ip_hits, f"polling:{ip}:{path}", self.polling_limit, self.polling_window)
             if not ok:
                 return self._limited(retry, "Too many polling requests. Please slow down.")
@@ -150,7 +177,9 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; base-uri 'self'; object-src 'none'; "
             "frame-ancestors 'none'; img-src 'self' data:; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src 'self'"
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://challenges.cloudflare.com; "
+            "connect-src 'self' https://challenges.cloudflare.com; "
+            "frame-src https://challenges.cloudflare.com"
         )
         return response
 
