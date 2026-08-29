@@ -30,6 +30,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self.public_window = _int_env("PUBLIC_WINDOW_SECONDS", 60)
         self.authenticated_limit = _int_env("AUTHENTICATED_LIMIT", 120)
         self.authenticated_window = _int_env("AUTHENTICATED_WINDOW_SECONDS", 60)
+        self.polling_limit = _int_env("POLLING_LIMIT", 120)
+        self.polling_window = _int_env("POLLING_WINDOW_SECONDS", 60)
         self.backoff_base = _int_env("AUTH_BACKOFF_BASE_SECONDS", 1)
         self.backoff_max = _int_env("AUTH_BACKOFF_MAX_SECONDS", 60)
         self.max_body = _int_env("MAX_REQUEST_BODY_BYTES", 8_000_000)
@@ -79,6 +81,15 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         is_auth_route = path in {"/auth/login", "/auth/signup"} or path == "/profile/password"
         is_public = path == "/health"
 
+        # Browser CORS preflight requests should not consume the normal API
+        # request bucket. The CORS middleware still validates the origin.
+        if request.method == "OPTIONS":
+            response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            return response
+
         account = None
         if is_auth_route and request.method in {"POST", "PUT"}:
             body = await request.body()
@@ -106,6 +117,13 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             ok, retry = self._allow(self.ip_hits, f"public:{ip}", self.public_limit, self.public_window)
             if not ok:
                 return self._limited(retry, "Too many requests.")
+        elif request.method == "GET" and path in {"/session/history", "/pipeline/status"}:
+            # Dashboard polling is intentionally isolated from the general API
+            # bucket. Otherwise a few normal polling widgets can exhaust the
+            # shared 120/minute limit and make the portal appear broken.
+            ok, retry = self._allow(self.ip_hits, f"polling:{ip}:{path}", self.polling_limit, self.polling_window)
+            if not ok:
+                return self._limited(retry, "Too many polling requests. Please slow down.")
         else:
             ok, retry = self._allow(self.ip_hits, f"api:{ip}", self.authenticated_limit, self.authenticated_window)
             if not ok:
