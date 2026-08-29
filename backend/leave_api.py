@@ -16,6 +16,7 @@ class LeaveRequestBody(BaseModel):
     duration: str = Field(min_length=1, max_length=20)
     half_day: str | None = Field(default=None, max_length=20)
     leave_date: str = Field(min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str | None = Field(default=None, min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
     reason: str = Field(min_length=8, max_length=500)
 
 
@@ -41,6 +42,7 @@ def apply_leave(request: LeaveRequestBody, user=Depends(get_current_user)):
     student_id = _student(user)
     try:
         leave_date = date.fromisoformat(request.leave_date)
+        end_date = date.fromisoformat(request.end_date) if request.end_date else None
         result = leave_manager.create_request(
             student_id,
             request.leave_type,
@@ -48,6 +50,7 @@ def apply_leave(request: LeaveRequestBody, user=Depends(get_current_user)):
             leave_date,
             request.reason,
             request.half_day,
+            end_date,
         )
         return {
             "success": True,
