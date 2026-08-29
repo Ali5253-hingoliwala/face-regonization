@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Activity, BarChart3, CalendarDays, CheckCircle2, Clock3, FileText, XCircle } from "lucide-react";
 import { api } from "../api/client";
 import StudentSidebar from "../components/StudentSidebar";
@@ -6,7 +6,6 @@ import { useAuth } from "../context/AuthContext";
 
 type Summary = { total_sessions: number; present: number; late: number; absent: number; attendance_percentage: number };
 type RecordItem = { date: string; session_id?: string; session_name?: string; status: string; time?: string; start_time?: string };
-
 type CardTone = "blue" | "green" | "sky" | "red";
 
 const cardStyles: Record<CardTone, string> = {
@@ -29,6 +28,7 @@ export default function StudentDashboardPage() {
   }, []);
 
   const recent = records.slice(0, 5);
+  const trend = useMemo(() => records.slice(0, 10).reverse(), [records]);
   const cards = [
     ["Attendance", `${summary.attendance_percentage}%`, BarChart3, "Overall attendance", "blue"],
     ["Present", summary.present, CheckCircle2, "Sessions attended", "green"],
@@ -44,7 +44,18 @@ export default function StudentDashboardPage() {
     </div>
 
     <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_1fr]">
-      <section className="rounded-2xl border border-line bg-panel p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Attendance Trend</p><h2 className="mt-1 text-lg font-semibold">Your attendance</h2></div><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent"><Activity size={19}/></div></div><div className="mt-6 flex h-40 items-end gap-2">{records.slice(0, 10).reverse().map((r, i) => { const good = r.status === "Present" ? 100 : r.status === "Late" ? 70 : 25; return <div key={`${r.date}-${i}`} className="flex h-full flex-1 flex-col justify-end"><div title={r.status} className={`rounded-t-lg transition-all ${r.status === "Present" ? "bg-present" : r.status === "Late" ? "bg-late" : "bg-absent"}`} style={{ height: `${good}%` }}/><span className="mt-2 truncate text-center text-[9px] text-ink-faint">{r.date?.slice(5) ?? ""}</span></div>; })}</div>{!records.length && <div className="mt-8 text-sm text-ink-muted">No attendance records yet.</div>}</section>
+      <section className="rounded-2xl border border-line bg-panel p-6 shadow-sm"><div className="flex items-center justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Attendance Trend</p><h2 className="mt-1 text-lg font-semibold">Your attendance</h2></div><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent"><Activity size={19}/></div></div>
+        <div className="mt-6 rounded-xl border border-line bg-panel-hover p-4">
+          {trend.length ? <div className="relative h-52 pl-9 pr-2 pb-7">
+            <div className="absolute inset-x-9 top-0 border-t border-line"/><div className="absolute inset-x-9 top-1/2 border-t border-line"/><div className="absolute inset-x-9 bottom-7 border-t border-line"/>
+            <span className="absolute left-0 top-[-7px] text-[9px] text-ink-faint">100%</span><span className="absolute left-0 top-[calc(50%-7px)] text-[9px] text-ink-faint">50%</span><span className="absolute bottom-[21px] left-0 text-[9px] text-ink-faint">0%</span>
+            <div className="absolute inset-x-9 bottom-7 top-0 flex items-end justify-between gap-2">{trend.map((r, i) => { const height = r.status === "Present" ? 100 : r.status === "Late" ? 65 : 18; const bar = r.status === "Present" ? "bg-present" : r.status === "Late" ? "bg-sky" : "bg-absent"; return <div key={`${r.session_id ?? r.date}-${i}`} className="group flex h-full min-w-0 flex-1 items-end justify-center"><div className={`relative w-full max-w-12 rounded-t-md ${bar} transition-all duration-300 group-hover:opacity-80`} style={{ height: `${Math.max(8, height)}%` }} title={`${r.date} · ${r.status}`}><span className="absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[9px] text-bg shadow-lg group-hover:block">{r.status}</span></div></div>; })}</div>
+            <div className="absolute inset-x-9 bottom-0 flex justify-between gap-2">{trend.map((r, i) => <span key={`${r.date}-label-${i}`} className="min-w-0 flex-1 truncate text-center text-[9px] text-ink-faint">{r.date?.slice(5) ?? ""}</span>)}</div>
+          </div> : <div className="flex h-52 items-center justify-center text-sm text-ink-muted">No attendance records yet.</div>}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-[10px] text-ink-muted"><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-present"/>Present</span><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-sky"/>Late</span><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-absent"/>Absent</span></div>
+      </section>
+
       <section className="rounded-2xl border border-line bg-panel p-6 shadow-sm"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-lavender-soft text-lavender"><CalendarDays size={19}/></div><div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Recent Activity</p><h2 className="mt-1 text-lg font-semibold">Latest sessions</h2></div></div><div className="mt-5 space-y-3">{recent.length ? recent.map((r, i) => <div key={`${r.date}-${i}`} className="flex items-center justify-between rounded-xl border border-line bg-panel-hover px-4 py-3"><div><p className="text-sm font-medium">{r.session_name || "Attendance Session"}</p><p className="mt-0.5 text-xs text-ink-muted">{r.date}</p></div><Status status={r.status}/></div>) : <p className="text-sm text-ink-muted">No sessions recorded yet.</p>}</div></section>
     </div>
 
