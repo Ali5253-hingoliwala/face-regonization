@@ -1,81 +1,215 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Eye, HeartPulse, Info, Plus, BriefcaseBusiness, X, Clock3 } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, ChevronDown, Clock3, HeartPulse, Plus, ShieldCheck, Sunrise, Sunset, X } from "lucide-react";
 import StudentSidebar from "../components/StudentSidebar";
 import { api } from "../api/client";
 
-const leaveTypes = ["Sick Leave", "Casual Leave", "Emergency Leave", "Other"];
-const PAGE_SIZE = 5;
-type LeaveRequest = { leave_id: string; leave_type: string; duration: string; half_day?: string | null; leave_date: string; reason: string; status: "Pending" | "Approved" | "Rejected"; admin_note?: string | null };
+type Balance = { entitlement: number; used: number; remaining: number };
+type BalanceResponse = { balances: Record<string, Balance> };
+type LeaveType = "Casual Leave" | "Earned Leave" | "Sick Leave" | "Emergency Leave";
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+const leaveMeta: Record<LeaveType, { icon: React.ReactNode; tone: "green" | "blue" | "orange" | "purple" }> = {
+  "Casual Leave": { icon: <BriefcaseBusiness size={22} />, tone: "green" },
+  "Earned Leave": { icon: <CalendarDays size={22} />, tone: "blue" },
+  "Sick Leave": { icon: <HeartPulse size={22} />, tone: "orange" },
+  "Emergency Leave": { icon: <ShieldCheck size={22} />, tone: "purple" },
+};
+
+const defaults: Record<string, Balance> = {
+  "Casual Leave": { entitlement: 12, used: 0, remaining: 12 },
+  "Earned Leave": { entitlement: 20, used: 0, remaining: 20 },
+  "Sick Leave": { entitlement: 7, used: 0, remaining: 7 },
+  "Emergency Leave": { entitlement: 5, used: 0, remaining: 5 },
+};
 
 export default function StudentLeavePage() {
-  const [type, setType] = useState(leaveTypes[0]);
-  const [duration, setDuration] = useState("Full Day");
-  const [half, setHalf] = useState("Morning");
-  const [date, setDate] = useState("");
-  const [reason, setReason] = useState("");
-  const [requests, setRequests] = useState<LeaveRequest[]>([]);
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [balances, setBalances] = useState<Record<string, Balance>>({});
   const [showApply, setShowApply] = useState(false);
-  const [page, setPage] = useState(1);
-  const [selected, setSelected] = useState<LeaveRequest | null>(null);
+  const [leaveType, setLeaveType] = useState<LeaveType>("Casual Leave");
+  const [duration, setDuration] = useState<"Full Day" | "Half Day">("Full Day");
+  const [halfDay, setHalfDay] = useState<"Morning" | "Afternoon">("Morning");
+  const [leaveDate, setLeaveDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  async function loadRequests() {
+  const loadBalance = async () => {
     try {
-      const response = await api.get("/leave/mine");
-      setRequests(response.data.requests ?? []);
-    } catch (error: any) {
-      setMessage(error?.response?.data?.detail ?? "Could not load leave requests.");
+      const response = await api.get<BalanceResponse>("/leave/balance");
+      setBalances(response.data.balances ?? {});
+    } catch {
+      setBalances({});
     }
-  }
-  useEffect(() => { void loadRequests(); }, []);
+  };
 
-  async function submit(event: React.FormEvent) {
+  useEffect(() => { void loadBalance(); }, []);
+
+  const selectedBalance = balances[leaveType] ?? defaults[leaveType];
+
+  const cards = useMemo(() => (Object.keys(leaveMeta) as LeaveType[]).map((type) => ({
+    type,
+    ...leaveMeta[type],
+    balance: balances[type] ?? defaults[type],
+  })), [balances]);
+
+  const openApply = () => {
+    setLeaveType("Casual Leave");
+    setDuration("Full Day");
+    setHalfDay("Morning");
+    setLeaveDate("");
+    setReason("");
+    setMessage("");
+    setError("");
+    setShowApply(true);
+  };
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!date || reason.trim().length < 5) { setMessage("Please select a leave date and provide a reason of at least 5 characters."); return; }
-    setLoading(true); setMessage("");
+    setError("");
+    setMessage("");
+    const currentDay = today();
+
+    if (duration === "Full Day" && !leaveDate) {
+      setError("Please select a leave date.");
+      return;
+    }
+    if (duration === "Full Day" && leaveDate < currentDay) {
+      setError("Full-day leave cannot be requested for a past date.");
+      return;
+    }
+    if (reason.trim().length < 8) {
+      setError("Please provide a clear reason of at least 8 characters.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await api.post("/leave", { leave_type: type, duration, half_day: duration === "Half Day" ? half : null, leave_date: date, reason: reason.trim() });
-      setMessage("Leave request submitted. It is now pending admin review.");
-      setDate(""); setReason(""); setShowApply(false); setPage(1); await loadRequests();
-    } catch (error: any) { setMessage(error?.response?.data?.detail ?? "Could not submit leave request."); }
-    finally { setLoading(false); }
-  }
+      const response = await api.post("/leave", {
+        leave_type: leaveType,
+        duration,
+        half_day: duration === "Half Day" ? halfDay : null,
+        leave_date: duration === "Half Day" ? currentDay : leaveDate,
+        reason: reason.trim(),
+      });
+      if (response.data?.balances) setBalances(response.data.balances);
+      else await loadBalance();
+      setShowApply(false);
+      setMessage("Leave request submitted successfully. Your available balance has been updated.");
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? "Could not submit the leave request.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-  const totals = useMemo(() => ({
-    casual: requests.filter((r) => r.leave_type === "Casual Leave").length,
-    sick: requests.filter((r) => r.leave_type === "Sick Leave").length,
-    other: requests.filter((r) => r.leave_type === "Emergency Leave" || r.leave_type === "Other").length,
-    pending: requests.filter((r) => r.status === "Pending").length,
-  }), [requests]);
-  const pageCount = Math.max(1, Math.ceil(requests.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const visibleRequests = requests.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  return (
+    <div className="min-h-screen bg-bg text-ink">
+      <StudentSidebar />
+      <main className="w-full px-5 py-8 sm:px-8 lg:px-10" style={{ marginLeft: "var(--portal-sidebar-offset,0px)", width: "calc(100% - var(--portal-sidebar-offset,0px))" }}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Student Portal</p>
+            <h1 className="mt-1 font-display text-3xl font-semibold">Leave Management</h1>
+            <p className="mt-2 text-sm text-ink-muted">Check your available leave balance and apply when you need time off.</p>
+          </div>
+          <button onClick={openApply} className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 transition hover:-translate-y-0.5 hover:bg-accent-dim">
+            <Plus size={18} /> Apply New Leave
+          </button>
+        </div>
 
-  return <div className="min-h-screen bg-bg text-ink"><StudentSidebar/><main className="w-full px-5 py-8 sm:px-8 lg:px-10" style={{marginLeft:"var(--portal-sidebar-offset,0px)",width:"calc(100% - var(--portal-sidebar-offset,0px))"}}>
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Student Portal</p><h1 className="mt-1 font-display text-3xl font-semibold">Leave Management</h1><p className="mt-2 text-sm text-ink-muted">Apply for leave and track every request and admin decision.</p></div><button type="button" onClick={()=>{setMessage("");setShowApply(true)}} className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/20 transition hover:-translate-y-0.5 hover:bg-accent-dim"><Plus size={18}/>Apply New Leave</button></div>
-    {message&&<div className="mt-5 rounded-xl border border-line bg-panel px-4 py-3 text-sm text-ink-muted shadow-sm">{message}</div>}
+        {message && <div className="mt-5 flex items-center justify-between rounded-xl border border-present/30 bg-mint-soft px-4 py-3 text-sm text-present"><span>{message}</span><button onClick={() => setMessage("")}><X size={16} /></button></div>}
 
-    <section className="mt-7 grid gap-5 xl:grid-cols-3"><BalanceCard title="CASUAL LEAVE" value={`${totals.casual}`} subtitle="Requests this year" tone="green" icon={<BriefcaseBusiness size={23}/>}/><BalanceCard title="SICK LEAVE" value={`${totals.sick}`} subtitle="Requests this year" tone="blue" icon={<HeartPulse size={23}/>}/><BalanceCard title="OTHER LEAVE" value={`${totals.other}`} subtitle={`${totals.pending} request${totals.pending===1?"":"s"} pending`} tone="orange" icon={<CalendarDays size={23}/>}/></section>
+        <section className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {cards.map(({ type, icon, tone, balance }) => {
+            const toneClass = {
+              green: "border-present/35 bg-present/5",
+              blue: "border-sky/35 bg-sky/5",
+              orange: "border-orange-400/35 bg-orange-400/5",
+              purple: "border-lavender/40 bg-lavender-soft/40",
+            }[tone];
+            const iconClass = {
+              green: "bg-present/10 text-present",
+              blue: "bg-sky/10 text-sky",
+              orange: "bg-orange-400/10 text-orange-500",
+              purple: "bg-lavender-soft text-lavender",
+            }[tone];
+            return (
+              <article key={type} className={`relative overflow-hidden rounded-2xl border p-6 shadow-sm ${toneClass}`}>
+                <p className="text-xs font-semibold tracking-wide text-ink-muted">{type.toUpperCase()}</p>
+                <p className="mt-2 text-4xl font-semibold text-ink">{balance.remaining}<span className="ml-1 text-lg font-medium text-ink-muted">Days</span></p>
+                <p className="mt-2 text-xs text-ink-muted">Used: {balance.used} days this year</p>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-bg"><div className={`h-full rounded-full ${iconClass.split(" ")[1] ?? "bg-accent"}`} style={{ width: `${Math.min(100, (balance.used / Math.max(1, balance.entitlement)) * 100)}%` }} /></div>
+                <p className="mt-2 text-[11px] text-ink-faint">{balance.remaining} of {balance.entitlement} days available</p>
+                <div className={`absolute right-5 top-1/2 flex h-14 w-14 -translate-y-1/2 items-center justify-center rounded-full ${iconClass}`}>{icon}</div>
+              </article>
+            );
+          })}
+        </section>
 
-    <section className="mt-7 overflow-hidden rounded-2xl border border-line bg-panel shadow-sm"><div className="flex flex-col gap-4 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-5"><button className="border-b-2 border-accent pb-3 text-sm font-semibold text-accent">My Leave Requests</button><button type="button" onClick={()=>setShowApply(true)} className="pb-3 text-sm font-medium text-ink-muted hover:text-ink">Apply for Leave</button></div><span className="text-xs text-ink-faint">{requests.length} total request{requests.length===1?"":"s"}</span></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[920px] text-left text-sm"><thead className="border-b border-line bg-panel-hover text-xs font-mono uppercase tracking-wide text-ink-faint"><tr><th className="px-5 py-4">Type</th><th className="px-5 py-4">Start Date</th><th className="px-5 py-4">End Date</th><th className="px-5 py-4">Duration</th><th className="px-5 py-4">Reason</th><th className="px-5 py-4">Status</th><th className="px-5 py-4">Applied On</th><th className="px-5 py-4 text-right">Action</th></tr></thead><tbody>
-        {visibleRequests.length?visibleRequests.map(item=><tr key={item.leave_id} className="border-b border-line last:border-0 hover:bg-panel-hover/70"><td className="px-5 py-4"><div className="flex items-center gap-3"><TypeIcon type={item.leave_type}/><div><p className="font-semibold">{item.leave_type}</p><span className="mt-1 inline-flex rounded-md bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent">{item.duration}{item.half_day?` (${item.half_day})`:""}</span></div></div></td><td className="px-5 py-4 text-ink-muted">{formatDate(item.leave_date)}</td><td className="px-5 py-4 text-ink-muted">{formatDate(item.leave_date)}</td><td className="px-5 py-4 text-ink-muted">{item.duration==="Half Day"?"0.5 Day":"1 Day"}</td><td className="max-w-[210px] px-5 py-4 text-ink-muted"><span className="block truncate" title={item.reason}>{item.reason}</span></td><td className="px-5 py-4"><Status status={item.status}/></td><td className="px-5 py-4 text-ink-muted">{formatDate(item.leave_date)}</td><td className="px-5 py-4 text-right"><button type="button" onClick={()=>setSelected(item)} title="View request" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink-muted transition hover:border-accent/50 hover:bg-accent-soft hover:text-accent"><Eye size={17}/></button></td></tr>):<tr><td colSpan={8} className="px-5 py-16 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-soft text-accent"><CalendarDays size={25}/></div><p className="mt-4 font-semibold">No leave history found</p><p className="mt-1 text-sm text-ink-muted">You haven't applied for any leaves yet.</p></td></tr>}
-      </tbody></table></div>
-      {requests.length>0&&<div className="flex items-center justify-end gap-2 border-t border-line px-5 py-4"><button type="button" disabled={currentPage===1} onClick={()=>setPage(p=>Math.max(1,p-1))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink-muted disabled:opacity-35"><ChevronLeft size={17}/></button>{Array.from({length:pageCount},(_,i)=>i+1).map(n=><button key={n} type="button" onClick={()=>setPage(n)} className={`h-9 min-w-9 rounded-lg border px-2 text-sm font-semibold ${n===currentPage?"border-accent bg-accent text-white":"border-line text-ink-muted hover:bg-panel-hover"}`}>{n}</button>)}<button type="button" disabled={currentPage===pageCount} onClick={()=>setPage(p=>Math.min(pageCount,p+1))} className="flex h-9 w-9 items-center justify-center rounded-lg border border-line text-ink-muted disabled:opacity-35"><ChevronRight size={17}/></button></div>}
-    </section>
-    <section className="mt-6 grid gap-5 lg:grid-cols-2"><InfoCard icon={<Info size={22}/>} title="Leave Policy" tone="blue" text="Apply for leave in advance where possible. A reason is required for every request and approval is handled by your administrator."/><InfoCard icon={<Clock3 size={22}/>} title="Need Help?" tone="gold" text="For leave balance questions, urgent requests, or policy clarification, contact your administrator."/></section>
-  </main>
+        <section className="mt-7 rounded-2xl border border-line bg-panel p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent"><CalendarDays size={22} /></div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">How leave works</p>
+              <h2 className="mt-1 text-xl font-semibold">Simple balance-first leave management</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-ink-muted">Your available balance is shown above. A full-day request uses one day, while a half-day request uses half a day and is restricted to today. Every request requires a reason and is sent to the administrator for review.</p>
+            </div>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <Guide icon={<CalendarDays size={19}/>} title="Full Day" text="Choose today or a future date for a complete day leave." />
+            <Guide icon={<Sunrise size={19}/>} title="Half Day" text="For today only. Select Morning or Afternoon." />
+            <Guide icon={<ShieldCheck size={19}/>} title="Admin Review" text="Your request is reviewed by the administrator." />
+          </div>
+        </section>
+      </main>
 
-  {showApply&&<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onMouseDown={()=>!loading&&setShowApply(false)}><div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-line bg-panel shadow-2xl" onMouseDown={e=>e.stopPropagation()}><div className="flex items-center justify-between border-b border-line px-6 py-5"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">Leave Request</p><h2 className="mt-1 text-xl font-semibold">Apply for Leave</h2></div><button type="button" onClick={()=>setShowApply(false)} className="rounded-lg p-2 text-ink-muted hover:bg-panel-hover hover:text-ink"><X size={19}/></button></div><form onSubmit={submit} className="space-y-5 p-6"><div className="grid gap-4 sm:grid-cols-2"><Field label="Leave Type"><select value={type} onChange={e=>setType(e.target.value)} className="input"><option>Sick Leave</option><option>Casual Leave</option><option>Emergency Leave</option><option>Other</option></select></Field><Field label="Duration"><select value={duration} onChange={e=>setDuration(e.target.value)} className="input"><option>Full Day</option><option>Half Day</option></select></Field></div>{duration==="Half Day"&&<Field label="Half Day"><select value={half} onChange={e=>setHalf(e.target.value)} className="input"><option>Morning</option><option>Afternoon</option></select></Field>}<Field label="Leave Date"><input type="date" min={new Date().toISOString().slice(0,10)} value={date} onChange={e=>setDate(e.target.value)} className="input"/></Field><Field label="Reason"><textarea required minLength={5} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Please explain the reason for your leave..." rows={5} className="input resize-none"/></Field>{message&&<div className="rounded-xl border border-line bg-bg px-4 py-3 text-sm text-ink-muted">{message}</div>}<div className="flex justify-end gap-2 border-t border-line pt-5"><button type="button" onClick={()=>setShowApply(false)} className="rounded-xl border border-line px-5 py-2.5 text-sm font-medium text-ink-muted hover:bg-panel-hover">Cancel</button><button type="submit" disabled={loading} className="rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-dim disabled:opacity-50">{loading?"Submitting...":"Submit Request"}</button></div></form></div></div>}
-  {selected&&<RequestModal item={selected} onClose={()=>setSelected(null)}/>}</div>;
+      {showApply && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onMouseDown={() => !submitting && setShowApply(false)}>
+          <div className="w-full max-w-3xl overflow-hidden rounded-3xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line px-6 py-5">
+              <div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Leave Request</p><h2 className="mt-1 text-2xl font-semibold">Apply for Leave</h2><p className="mt-1 text-sm text-ink-muted">Choose your leave type and request format.</p></div>
+              <button onClick={() => setShowApply(false)} className="rounded-xl p-2 text-ink-muted hover:bg-panel-hover"><X size={20}/></button>
+            </div>
+            <form onSubmit={submit} className="p-6">
+              <div className="grid gap-5 md:grid-cols-2">
+                <Field label="Leave Type">
+                  <div className="relative"><select value={leaveType} onChange={(e) => setLeaveType(e.target.value as LeaveType)} className="w-full appearance-none rounded-xl border border-line bg-bg px-4 py-3.5 pr-10 text-sm font-medium outline-none focus:border-accent">{(Object.keys(leaveMeta) as LeaveType[]).map((type) => <option key={type}>{type}</option>)}</select><ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted"/></div>
+                </Field>
+                <Field label="Available Balance">
+                  <div className="rounded-xl border border-line bg-bg px-4 py-3.5"><p className="text-xs text-ink-muted">Remaining for {leaveType}</p><p className="mt-1 text-2xl font-semibold text-accent">{selectedBalance.remaining} days</p></div>
+                </Field>
+              </div>
+
+              <div className="mt-6"><label className="mb-2 block text-sm font-medium">Request Type</label><div className="grid gap-3 sm:grid-cols-2">
+                <button type="button" onClick={() => setDuration("Full Day")} className={`rounded-2xl border p-4 text-left transition ${duration === "Full Day" ? "border-accent bg-accent-soft" : "border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center gap-3"><CalendarDays size={22} className={duration === "Full Day" ? "text-accent" : "text-ink-muted"}/><div><p className="font-semibold">Full Day</p><p className="mt-1 text-xs text-ink-muted">Complete day · today or future date</p></div></div></button>
+                <button type="button" onClick={() => setDuration("Half Day")} className={`rounded-2xl border p-4 text-left transition ${duration === "Half Day" ? "border-accent bg-accent-soft" : "border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center gap-3"><Clock3 size={22} className={duration === "Half Day" ? "text-accent" : "text-ink-muted"}/><div><p className="font-semibold">Half Day</p><p className="mt-1 text-xs text-ink-muted">Today only · 0.5 day</p></div></div></button>
+              </div></div>
+
+              {duration === "Full Day" ? (
+                <div className="mt-6"><Field label="Leave Date"><input type="date" min={today()} value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} className="w-full rounded-xl border border-line bg-bg px-4 py-3.5 text-sm outline-none focus:border-accent"/></Field></div>
+              ) : (
+                <div className="mt-6 rounded-2xl border border-accent/30 bg-accent-soft p-5">
+                  <div className="flex items-center justify-between"><div><p className="font-semibold text-accent">Half-day leave · Today</p><p className="mt-1 text-sm text-ink-muted">{today().split("-").reverse().join("-")} · select one half.</p></div><span className="rounded-lg bg-panel px-3 py-1.5 text-xs font-semibold text-accent">0.5 Day</span></div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <button type="button" onClick={() => setHalfDay("Morning")} className={`flex items-center gap-3 rounded-xl border p-4 transition ${halfDay === "Morning" ? "border-accent bg-panel" : "border-line bg-bg"}`}><Sunrise size={22} className={halfDay === "Morning" ? "text-accent" : "text-ink-muted"}/><div className="text-left"><p className="font-medium">Morning</p><p className="text-xs text-ink-muted">First half</p></div></button>
+                    <button type="button" onClick={() => setHalfDay("Afternoon")} className={`flex items-center gap-3 rounded-xl border p-4 transition ${halfDay === "Afternoon" ? "border-accent bg-panel" : "border-line bg-bg"}`}><Sunset size={22} className={halfDay === "Afternoon" ? "text-accent" : "text-ink-muted"}/><div className="text-left"><p className="font-medium">Afternoon</p><p className="text-xs text-ink-muted">Second half</p></div></button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 rounded-2xl border border-line bg-bg p-5"><div className="flex items-center justify-between"><div><label className="text-sm font-semibold">Reason for Leave</label><p className="mt-1 text-xs text-ink-muted">This is required for administrator review.</p></div><span className="text-xs text-ink-faint">{reason.length}/500</span></div><textarea required minLength={8} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} rows={5} placeholder="Explain the reason for your leave..." className="mt-4 w-full resize-none rounded-xl border border-line bg-panel px-4 py-3 text-sm outline-none focus:border-accent"/></div>
+
+              {error && <div className="mt-5 rounded-xl border border-absent/30 bg-rose-soft px-4 py-3 text-sm text-absent">{error}</div>}
+              <div className="mt-6 flex justify-end gap-3 border-t border-line pt-5"><button type="button" onClick={() => setShowApply(false)} className="rounded-xl border border-line px-5 py-3 text-sm font-medium text-ink-muted hover:bg-panel-hover">Cancel</button><button disabled={submitting} className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-accent-dim disabled:opacity-50">{submitting ? "Submitting..." : "Submit Request"}</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function BalanceCard({title,value,subtitle,tone,icon}:{title:string;value:string;subtitle:string;tone:"green"|"blue"|"orange";icon:React.ReactNode}){const styles={green:"border-present/40 text-present bg-present/5",blue:"border-sky-400/40 text-sky-500 bg-sky-400/5",orange:"border-orange-400/40 text-orange-500 bg-orange-400/5"}[tone];const iconStyles={green:"bg-present/10",blue:"bg-sky-400/10",orange:"bg-orange-400/10"}[tone];return <div className={`relative overflow-hidden rounded-2xl border p-6 ${styles}`}><div className="relative z-10"><p className="text-xs font-semibold tracking-wide">{title}</p><p className="mt-2 text-3xl font-semibold text-ink">{value}</p><p className="mt-1 text-xs text-ink-muted">{subtitle}</p></div><div className={`absolute right-6 top-1/2 flex h-16 w-16 -translate-y-1/2 items-center justify-center rounded-full ${iconStyles}`}>{icon}</div></div>}
-function TypeIcon({type}:{type:string}){const icon=type==="Sick Leave"?<HeartPulse size={18}/>:type==="Casual Leave"?<BriefcaseBusiness size={18}/>:<CalendarDays size={18}/>;return <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">{icon}</span>}
-function Status({status}:{status:LeaveRequest["status"]}){const cls=status==="Approved"?"bg-mint-soft text-present":status==="Rejected"?"bg-rose-soft text-absent":"bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300";return <span className={`inline-flex rounded-md px-2.5 py-1 text-[10px] font-semibold ${cls}`}>{status}</span>}
-function InfoCard({icon,title,text,tone}:{icon:React.ReactNode;title:string;text:string;tone:"blue"|"gold"}){return <div className={`rounded-2xl border ${tone==="blue"?"border-sky-400/40":"border-accent/40"} bg-panel p-5 shadow-sm`}><div className="flex items-start gap-4"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${tone==="blue"?"bg-sky-400/10 text-sky-500":"bg-accent-soft text-accent"}`}>{icon}</div><div><h3 className={`font-semibold ${tone==="blue"?"text-sky-500":"text-accent"}`}>{title}</h3><p className="mt-1 text-sm leading-6 text-ink-muted">{text}</p></div></div></div>}
-function Field({label,children}:{label:string;children:React.ReactNode}){return <div><label className="mb-1.5 block text-xs font-mono text-ink-muted">{label}</label>{children}</div>}
-function RequestModal({item,onClose}:{item:LeaveRequest;onClose:()=>void}){return <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onMouseDown={onClose}><div className="w-full max-w-lg rounded-2xl border border-line bg-panel p-6 shadow-2xl" onMouseDown={e=>e.stopPropagation()}><div className="flex items-start justify-between"><div><p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">Leave Request</p><h2 className="mt-1 text-xl font-semibold">{item.leave_type}</h2></div><button onClick={onClose} className="rounded-lg p-2 text-ink-muted hover:bg-panel-hover"><X size={18}/></button></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><Detail label="Date" value={formatDate(item.leave_date)}/><Detail label="Duration" value={`${item.duration}${item.half_day?` · ${item.half_day}`:""}`}/><Detail label="Status" value={item.status}/><Detail label="Request ID" value={item.leave_id}/></div><div className="mt-5 rounded-xl bg-bg p-4"><p className="text-xs font-mono text-ink-faint">REASON</p><p className="mt-2 text-sm leading-6 text-ink-muted">{item.reason}</p></div>{item.admin_note&&<div className="mt-4 rounded-xl bg-accent-soft p-4"><p className="text-xs font-mono text-accent">ADMIN NOTE</p><p className="mt-2 text-sm leading-6 text-ink-muted">{item.admin_note}</p></div>}</div></div>}
-function Detail({label,value}:{label:string;value:string}){return <div className="rounded-xl border border-line bg-bg p-3"><p className="text-[10px] font-mono text-ink-faint">{label}</p><p className="mt-1 truncate text-sm font-medium" title={value}>{value}</p></div>}
-function formatDate(value:string){const date=new Date(`${value}T00:00:00`);if(Number.isNaN(date.getTime()))return value;return date.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div><label className="mb-2 block text-sm font-medium">{label}</label>{children}</div>; }
+function Guide({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="rounded-xl border border-line bg-bg p-4"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-soft text-accent">{icon}</div><p className="mt-3 font-semibold">{title}</p><p className="mt-1 text-xs leading-5 text-ink-muted">{text}</p></div>; }
