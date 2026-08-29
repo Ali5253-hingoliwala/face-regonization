@@ -5,14 +5,14 @@ import { api } from "../api/client";
 type Role = "admin" | "student";
 type Theme = "light" | "dark";
 interface AuthState { token: string | null; role: Role | null; name: string | null; studentId: string | null; }
-interface GoogleResult { onboardingRequired: boolean; email?: string; suggestedName?: string; role?: Role; }
+interface GoogleResult { onboardingRequired: boolean; email?: string; suggestedName?: string; }
 interface AuthContextValue extends AuthState {
   isAuthenticated: boolean;
   authReady: boolean;
   theme: Theme;
   toggleTheme: () => void;
   login: (username: string, password: string) => Promise<Role>;
-  signup: (studentId: string, name: string, password: string, faceImage: string) => Promise<void>;
+  signup: (studentId: string, name: string, password: string, faceImage: string, email: string, gender: string) => Promise<void>;
   googleLogin: (credential: string) => Promise<GoogleResult>;
   googleOnboard: (credential: string, data: { username: string; studentId: string; password: string; gender: string; faceImage: string }) => Promise<Role>;
   logout: () => void;
@@ -36,31 +36,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); localStorage.setItem("va_theme", theme); }, [theme]);
   useEffect(() => { const token=localStorage.getItem("va_token"); const role=localStorage.getItem("va_role") as Role|null; const name=localStorage.getItem("va_name"); const studentId=localStorage.getItem("va_student_id"); if(token&&role)setState({token,role,name,studentId}); setAuthReady(true); }, []);
 
-  async function login(username:string,password:string):Promise<Role>{
-    const response=await api.post("/auth/login",{username,password});
-    const next = persistAuth(response); setState(next); return next.role;
-  }
+  async function login(username:string,password:string):Promise<Role>{ const response=await api.post("/auth/login",{username,password}); const next = persistAuth(response); setState(next); return next.role; }
 
-  async function signup(studentId:string,name:string,password:string,faceImage:string){ await api.post("/auth/signup",{student_id:studentId,name,password,face_image:faceImage}); }
+  async function signup(studentId:string,name:string,password:string,faceImage:string,email:string,gender:string){ await api.post("/auth/signup",{student_id:studentId,name,email,password,gender,face_image:faceImage}); }
 
   async function googleLogin(credential: string): Promise<GoogleResult> {
     const response = await api.post("/auth/google", { credential });
-    if (response.data?.onboarding_required) {
-      return { onboardingRequired: true, email: response.data.email, suggestedName: response.data.suggested_name };
-    }
-    const next = persistAuth(response); setState(next);
-    return { onboardingRequired: false, role: next.role };
+    if (response.data?.onboarding_required) return { onboardingRequired: true, email: response.data.email, suggestedName: response.data.suggested_name };
+    const next = persistAuth(response); setState(next); return { onboardingRequired: false, role: next.role };
   }
 
   async function googleOnboard(credential: string, data: { username: string; studentId: string; password: string; gender: string; faceImage: string }): Promise<Role> {
-    const response = await api.post("/auth/google", {
-      credential,
-      username: data.username,
-      student_id: data.studentId,
-      password: data.password,
-      gender: data.gender,
-      face_image: data.faceImage,
-    });
+    const response = await api.post("/auth/google", { credential, username: data.username, student_id: data.studentId, password: data.password, gender: data.gender, face_image: data.faceImage });
     const next = persistAuth(response); setState(next); return next.role;
   }
 
