@@ -181,44 +181,46 @@ export default function StudentLeavePage() {
       </main>
 
       {showApply && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onMouseDown={() => !submitting && setShowApply(false)}>
-          <div className="w-full max-w-3xl overflow-hidden rounded-3xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-line px-6 py-5">
-              <div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Leave Request</p><h2 className="mt-1 text-2xl font-semibold">Apply for Leave</h2><p className="mt-1 text-sm text-ink-muted">Choose your leave type and request format.</p></div>
-              <button onClick={() => setShowApply(false)} className="rounded-xl p-2 text-ink-muted hover:bg-panel-hover"><X size={20}/></button>
-            </div>
-            <form onSubmit={submit} className="p-6">
-              <div className="grid gap-5 md:grid-cols-2">
-                <Field label="Leave Type">
-                  <div className="relative"><select value={leaveType} onChange={(e) => setLeaveType(e.target.value as LeaveType)} className="w-full appearance-none rounded-xl border border-line bg-bg px-4 py-3.5 pr-10 text-sm font-medium outline-none focus:border-accent">{(Object.keys(leaveMeta) as LeaveType[]).map((type) => <option key={type}>{type}</option>)}</select><ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted"/></div>
-                </Field>
-                <Field label="Available Balance">
-                  <div className="rounded-xl border border-line bg-bg px-4 py-3.5"><p className="text-xs text-ink-muted">Remaining for {leaveType}</p><p className="mt-1 text-2xl font-semibold text-accent">{selectedBalance.remaining} days</p></div>
-                </Field>
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-black/60 p-4 backdrop-blur-sm" onMouseDown={() => !submitting && setShowApply(false)}>
+          <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-3xl items-center justify-center py-4">
+            <div className="flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-3xl border border-line bg-panel shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="flex shrink-0 items-center justify-between border-b border-line px-6 py-5">
+                <div><p className="font-mono text-[10px] uppercase tracking-[0.18em] text-accent">Leave Request</p><h2 className="mt-1 text-2xl font-semibold">Apply for Leave</h2><p className="mt-1 text-sm text-ink-muted">Choose your leave type and request format.</p></div>
+                <button onClick={() => setShowApply(false)} className="rounded-xl p-2 text-ink-muted hover:bg-panel-hover"><X size={20}/></button>
               </div>
-
-              <div className="mt-6"><label className="mb-2 block text-sm font-medium">Request Type</label><div className="grid gap-3 sm:grid-cols-2">
-                <button type="button" onClick={() => setDuration("Full Day")} className={`rounded-2xl border p-4 text-left transition ${duration === "Full Day" ? "border-accent bg-accent-soft" : "border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center gap-3"><CalendarDays size={22} className={duration === "Full Day" ? "text-accent" : "text-ink-muted"}/><div><p className="font-semibold">Full Day</p><p className="mt-1 text-xs text-ink-muted">Complete day · today or future date</p></div></div></button>
-                <button type="button" onClick={() => setDuration("Half Day")} className={`rounded-2xl border p-4 text-left transition ${duration === "Half Day" ? "border-accent bg-accent-soft" : "border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center gap-3"><Clock3 size={22} className={duration === "Half Day" ? "text-accent" : "text-ink-muted"}/><div><p className="font-semibold">Half Day</p><p className="mt-1 text-xs text-ink-muted">Today only · 0.5 day</p></div></div></button>
-              </div></div>
-
-              {duration === "Full Day" ? (
-                <div className="mt-6"><Field label="Leave Date"><input type="date" min={today()} value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} className="w-full rounded-xl border border-line bg-bg px-4 py-3.5 text-sm outline-none focus:border-accent"/></Field></div>
-              ) : (
-                <div className="mt-6 rounded-2xl border border-accent/30 bg-accent-soft p-5">
-                  <div className="flex items-center justify-between"><div><p className="font-semibold text-accent">Half-day leave · Today</p><p className="mt-1 text-sm text-ink-muted">{today().split("-").reverse().join("-")} · select one half.</p></div><span className="rounded-lg bg-panel px-3 py-1.5 text-xs font-semibold text-accent">0.5 Day</span></div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <button type="button" onClick={() => setHalfDay("Morning")} className={`flex items-center gap-3 rounded-xl border p-4 transition ${halfDay === "Morning" ? "border-accent bg-panel" : "border-line bg-bg"}`}><Sunrise size={22} className={halfDay === "Morning" ? "text-accent" : "text-ink-muted"}/><div className="text-left"><p className="font-medium">Morning</p><p className="text-xs text-ink-muted">First half</p></div></button>
-                    <button type="button" onClick={() => setHalfDay("Afternoon")} className={`flex items-center gap-3 rounded-xl border p-4 transition ${halfDay === "Afternoon" ? "border-accent bg-panel" : "border-line bg-bg"}`}><Sunset size={22} className={halfDay === "Afternoon" ? "text-accent" : "text-ink-muted"}/><div className="text-left"><p className="font-medium">Afternoon</p><p className="text-xs text-ink-muted">Second half</p></div></button>
-                  </div>
+              <form onSubmit={submit} className="min-h-0 flex-1 overflow-y-auto p-6">
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field label="Leave Type">
+                    <div className="relative"><select value={leaveType} onChange={(e) => setLeaveType(e.target.value as LeaveType)} className="w-full appearance-none rounded-xl border border-line bg-bg px-4 py-3.5 pr-10 text-sm font-medium outline-none focus:border-accent">{(Object.keys(leaveMeta) as LeaveType[]).map((type) => <option key={type}>{type}</option>)}</select><ChevronDown size={18} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted"/></div>
+                  </Field>
+                  <Field label="Available Balance">
+                    <div className="rounded-xl border border-line bg-bg px-4 py-3.5"><p className="text-xs text-ink-muted">Remaining for {leaveType}</p><p className="mt-1 text-2xl font-semibold text-accent">{selectedBalance.remaining} days</p></div>
+                  </Field>
                 </div>
-              )}
 
-              <div className="mt-6 rounded-2xl border border-line bg-bg p-5"><div className="flex items-center justify-between"><div><label className="text-sm font-semibold">Reason for Leave</label><p className="mt-1 text-xs text-ink-muted">This is required for administrator review.</p></div><span className="text-xs text-ink-faint">{reason.length}/500</span></div><textarea required minLength={8} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} rows={5} placeholder="Explain the reason for your leave..." className="mt-4 w-full resize-none rounded-xl border border-line bg-panel px-4 py-3 text-sm outline-none focus:border-accent"/></div>
+                <div className="mt-6"><label className="mb-2 block text-sm font-medium">Request Type</label><div className="grid gap-3 sm:grid-cols-2">
+                  <button type="button" onClick={() => setDuration("Full Day")} className={`rounded-2xl border p-4 text-left transition ${duration === "Full Day" ? "border-accent bg-accent-soft" : "border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center gap-3"><CalendarDays size={22} className={duration === "Full Day" ? "text-accent" : "text-ink-muted"}/><div><p className="font-semibold">Full Day</p><p className="mt-1 text-xs text-ink-muted">Complete day · today or future date</p></div></div></button>
+                  <button type="button" onClick={() => setDuration("Half Day")} className={`rounded-2xl border p-4 text-left transition ${duration === "Half Day" ? "border-accent bg-accent-soft" : "border-line bg-bg hover:bg-panel-hover"}`}><div className="flex items-center gap-3"><Clock3 size={22} className={duration === "Half Day" ? "text-accent" : "text-ink-muted"}/><div><p className="font-semibold">Half Day</p><p className="mt-1 text-xs text-ink-muted">Today only · 0.5 day</p></div></div></button>
+                </div></div>
 
-              {error && <div className="mt-5 rounded-xl border border-absent/30 bg-rose-soft px-4 py-3 text-sm text-absent">{error}</div>}
-              <div className="mt-6 flex justify-end gap-3 border-t border-line pt-5"><button type="button" onClick={() => setShowApply(false)} className="rounded-xl border border-line px-5 py-3 text-sm font-medium text-ink-muted hover:bg-panel-hover">Cancel</button><button disabled={submitting} className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-accent-dim disabled:opacity-50">{submitting ? "Submitting..." : "Submit Request"}</button></div>
-            </form>
+                {duration === "Full Day" ? (
+                  <div className="mt-6"><Field label="Leave Date"><input type="date" min={today()} value={leaveDate} onChange={(e) => setLeaveDate(e.target.value)} className="w-full rounded-xl border border-line bg-bg px-4 py-3.5 text-sm outline-none focus:border-accent"/></Field></div>
+                ) : (
+                  <div className="mt-6 rounded-2xl border border-accent/30 bg-accent-soft p-5">
+                    <div className="flex items-center justify-between"><div><p className="font-semibold text-accent">Half-day leave · Today</p><p className="mt-1 text-sm text-ink-muted">{today().split("-").reverse().join("-")} · select one half.</p></div><span className="rounded-lg bg-panel px-3 py-1.5 text-xs font-semibold text-accent">0.5 Day</span></div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <button type="button" onClick={() => setHalfDay("Morning")} className={`flex items-center gap-3 rounded-xl border p-4 transition ${halfDay === "Morning" ? "border-accent bg-panel" : "border-line bg-bg"}`}><Sunrise size={22} className={halfDay === "Morning" ? "text-accent" : "text-ink-muted"}/><div className="text-left"><p className="font-medium">Morning</p><p className="text-xs text-ink-muted">First half</p></div></button>
+                      <button type="button" onClick={() => setHalfDay("Afternoon")} className={`flex items-center gap-3 rounded-xl border p-4 transition ${halfDay === "Afternoon" ? "border-accent bg-panel" : "border-line bg-bg"}`}><Sunset size={22} className={halfDay === "Afternoon" ? "text-accent" : "text-ink-muted"}/><div className="text-left"><p className="font-medium">Afternoon</p><p className="text-xs text-ink-muted">Second half</p></div></button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-6 rounded-2xl border border-line bg-bg p-5"><div className="flex items-center justify-between"><div><label className="text-sm font-semibold">Reason for Leave</label><p className="mt-1 text-xs text-ink-muted">This is required for administrator review.</p></div><span className="text-xs text-ink-faint">{reason.length}/500</span></div><textarea required minLength={8} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} rows={5} placeholder="Explain the reason for your leave..." className="mt-4 w-full resize-none rounded-xl border border-line bg-panel px-4 py-3 text-sm outline-none focus:border-accent"/></div>
+
+                {error && <div className="mt-5 rounded-xl border border-absent/30 bg-rose-soft px-4 py-3 text-sm text-absent">{error}</div>}
+                <div className="mt-6 flex justify-end gap-3 border-t border-line pt-5"><button type="button" onClick={() => setShowApply(false)} className="rounded-xl border border-line px-5 py-3 text-sm font-medium text-ink-muted hover:bg-panel-hover">Cancel</button><button disabled={submitting} className="inline-flex items-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-accent-dim disabled:opacity-50">{submitting ? "Submitting..." : "Submit Request"}</button></div>
+              </form>
+            </div>
           </div>
         </div>
       )}
