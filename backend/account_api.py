@@ -27,11 +27,17 @@ class PasswordUpdate(BaseModel):
 class PhotoUpdate(BaseModel):
     image: str = Field(min_length=1, max_length=3500000)
 
+
+def _account(user):
+    account = users.get_user(user["sub"])
+    if account is None or account.get("is_active") is False:
+        raise HTTPException(401, "Account is unavailable.")
+    return account
+
+
 @router.get("/account/profile")
 def account_profile(user=Depends(get_current_user)):
-    account = users.get_user(user["sub"])
-    if account is None:
-        raise HTTPException(404, "User not found.")
+    account = _account(user)
     return {
         "username": account["username"], "name": account.get("name"),
         "role": account.get("role"), "student_id": account.get("student_id"),
@@ -47,17 +53,18 @@ def account_profile(user=Depends(get_current_user)):
 
 @router.put("/account/profile")
 def update_account_profile(request: ProfileUpdate, user=Depends(get_current_user)):
+    account = _account(user)
     name = request.name.strip()
     email = request.email.strip().lower() if request.email else None
     gender = request.gender.strip().lower() if request.gender else None
     if gender and gender not in ALLOWED_GENDERS:
         raise HTTPException(422, "Gender must be Male, Female, or Prefer not to say.")
     try:
-        users.update_profile(user["sub"], name)
-        if email is not None:
-            users.update_email(user["sub"], email, verified=False)
-        if gender is not None:
-            users.update_gender(user["sub"], gender)
+        users.update_profile(account["username"], name)
+        if email != account.get("email"):
+            users.update_email(account["username"], email, verified=False)
+        if gender != account.get("gender"):
+            users.update_gender(account["username"], gender)
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     return {"success": True}
@@ -68,14 +75,17 @@ def update_account_password(request: PasswordUpdate, user=Depends(get_current_us
         raise HTTPException(422, "New passwords do not match.")
     if len(request.new_password.encode("utf-8")) > 72:
         raise HTTPException(422, "New password is too long.")
-    account = users.get_user(user["sub"])
-    if account is None or not verify_password(request.current_password, account["password_hash"]):
+    account = _account(user)
+    if not account.get("password_hash"):
+        raise HTTPException(400, "This account does not have a local password. Use Google sign-in.")
+    if not verify_password(request.current_password, account["password_hash"]):
         raise HTTPException(401, "Current password is incorrect.")
-    users.update_password(user["sub"], hash_password(request.new_password))
+    users.update_password(account["username"], hash_password(request.new_password))
     return {"success": True}
 
 @router.put("/account/photo")
 def update_account_photo(request: PhotoUpdate, user=Depends(get_current_user)):
+    _account(user)
     data = request.image
     if not data.startswith("data:image/") or "," not in data:
         raise HTTPException(400, "A valid image data URL is required.")
@@ -89,11 +99,9 @@ def update_account_photo(request: PhotoUpdate, user=Depends(get_current_user)):
         raise HTTPException(400, "Invalid image encoding.")
     if len(raw) > 2 * 1024 * 1024:
         raise HTTPException(413, "Profile photo must be 2 MB or smaller.")
-    arr = np.frombuffer(raw, dtype=np.uint8)
-    image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    image = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise HTTPException(400, "Invalid image file.")
-    # Re-encode to a known safe raster format before storing it.
     ok, encoded = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     if not ok:
         raise HTTPException(400, "Could not process image.")
@@ -103,9 +111,7 @@ def update_account_photo(request: PhotoUpdate, user=Depends(get_current_user)):
 
 @router.get("/account/security")
 def account_security(user=Depends(get_current_user)):
-    account = users.get_user(user["sub"])
-    if account is None:
-        raise HTTPException(404, "User not found.")
+    account = _account(user)
     return {
         "email_verified": bool(account.get("email_verified")),
         "google_linked": bool(account.get("google_sub")),
@@ -114,3 +120,17 @@ def account_security(user=Depends(get_current_user)):
         "active": account.get("is_active", True),
         "last_login": account.get("last_login"),
     }
+
+@router.post("/account/2fa/enable")
+def enable_2fa(user=Depends(get_current_user)):
+    account = _account(user)
+    if not account.get("email") or not account.get("email_verified"):
+        raise HTTPException(400, "Verify your email before enabling 2FA.")
+    users.collection.update_one({"username": account["username"]}, {"$set": {"two_factor_enabled": True, "updated_at": datetime.now(timezone.utc)}})
+    return {"success": True, "two_factor_enabled": True}
+
+@router.post("/account/2fa/disable")
+def disable_2fa(user=Depends(get_current_user)):
+    account = _account(user)
+    users.collection.update_one({"username": account["username"]}, {"$set": {"two_factor_enabled": False, "updated_at": datetime.now(timezone.utc)}})
+    return {"success": True, "two_factor_enabled": False}
