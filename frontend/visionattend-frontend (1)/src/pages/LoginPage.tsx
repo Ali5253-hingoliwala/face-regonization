@@ -1,24 +1,29 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { ArrowRight, User, Lock, ScanFace, Eye, EyeOff, Home } from "lucide-react";
+import { ArrowRight, User, Lock, ScanFace, Eye, EyeOff, Home, ShieldCheck } from "lucide-react";
 import ViewfinderFrame from "../components/ViewfinderFrame";
 import Logo from "../components/Logo";
 import GoogleSignInButton from "../components/GoogleSignInButton";
+import TurnstileWidget from "../components/TurnstileWidget";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { login, googleLogin } = useAuth();
   const navigate = useNavigate();
+  const handleCaptcha = useCallback((token: string) => setCaptchaToken(token), []);
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setError(null); setLoading(true);
-    try { const role = await login(username, password); navigate(role === "admin" ? "/admin" : "/student"); }
-    catch (err: any) { setError(err?.response?.data?.detail ?? "Something went wrong. Try again."); }
+    e.preventDefault(); setError(null);
+    if (!captchaToken) { setError("Please complete the CAPTCHA before logging in."); return; }
+    setLoading(true);
+    try { const role = await login(username, password, captchaToken); navigate(role === "admin" ? "/admin" : "/student"); }
+    catch (err: any) { setCaptchaToken(""); setError(err?.response?.data?.detail ?? "Something went wrong. Try again."); }
     finally { setLoading(false); }
   }
 
@@ -60,10 +65,15 @@ export default function LoginPage() {
               <div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" size={16} /><input type="text" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-white border border-line rounded-lg pl-9 pr-3 py-2.5 text-sm shadow-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft transition-all" /></div>
             </div>
             <PasswordField label="Password" value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword(v => !v)} />
+            <div className="rounded-xl border border-line bg-panel p-3">
+              <div className="flex items-center gap-2 mb-2 text-xs font-medium text-ink-muted"><ShieldCheck size={15} /> Security verification</div>
+              <TurnstileWidget onToken={handleCaptcha} disabled={loading} />
+            </div>
             {error && <p className="text-sm text-absent bg-absent/5 border border-absent/20 rounded-lg px-3 py-2">{error}</p>}
-            <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-accent text-white font-medium py-2.5 rounded-lg shadow-sm hover:bg-accent-dim transition-all disabled:opacity-60">{loading ? "Logging in..." : "Log in"}{!loading && <ArrowRight size={16} />}</button>
+            <button type="submit" disabled={loading || !captchaToken} className="w-full flex items-center justify-center gap-2 bg-accent text-white font-medium py-2.5 rounded-lg shadow-sm hover:bg-accent-dim transition-all disabled:opacity-60">{loading ? "Logging in..." : "Log in"}{!loading && <ArrowRight size={16} />}</button>
           </form>
-          <p className="text-sm text-ink-muted mt-8 text-center">New student? <Link to="/signup" className="text-accent font-medium hover:underline">Sign up</Link></p>
+          <p className="text-xs text-ink-faint mt-4 text-center">Protected by Cloudflare Turnstile.</p>
+          <p className="text-sm text-ink-muted mt-6 text-center">New student? <Link to="/signup" className="text-accent font-medium hover:underline">Sign up</Link></p>
         </div>
       </div>
 
