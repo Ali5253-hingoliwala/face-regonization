@@ -18,6 +18,7 @@ TYPE_TO_FIELD = {
     "Earned Leave": "earned_leave",
     "Emergency Leave": "emergency_leave",
 }
+ACTIVE_STATUSES = ["Pending", "Approved", "pending", "approved"]
 
 
 class LeaveManager:
@@ -25,8 +26,9 @@ class LeaveManager:
         self.balances = db["leave_balances"]
         self.requests = db["leave_requests"]
         self.balances.create_index("student_id", unique=True)
+        self.requests.create_index([("student_id", 1), ("start_date", -1)])
         self.requests.create_index([("student_id", 1), ("leave_date", -1)])
-        self.requests.create_index([("status", 1), ("leave_date", -1)])
+        self.requests.create_index([("status", 1), ("start_date", -1)])
 
     def _ensure_balance(self, student_id: str):
         existing = self.balances.find_one({"student_id": student_id}, {"_id": 0})
@@ -42,47 +44,86 @@ class LeaveManager:
         for label, field in TYPE_TO_FIELD.items():
             entitlement = DEFAULT_BALANCES[field]
             remaining = float(doc.get(field, entitlement))
-            result[label] = {"entitlement": entitlement, "remaining": remaining, "used": round(entitlement - remaining, 1)}
+            result[label] = {
+                "entitlement": entitlement,
+                "remaining": remaining,
+                "used": round(entitlement - remaining, 1),
+            }
         return result
 
-    def create_request(self, student_id: str, leave_type: str, duration: str, leave_date: date, reason: str, half_day: Optional[str] = None):
+    def _find_overlap(self, student_id: str, start_date: date, end_date: date):
+        start = start_date.isoformat()
+        end = end_date.isoformat()
+        return self.requests.find_one({
+            "student_id": student_id,
+            "status": {"$in": ACTIVE_STATUSES},
+            "$or": [
+                {"start_date": {"$lte": end}, "end_date": {"$gte": start}},
+                {"leave_date": {"$gte": start, "$lte": end}},
+                {"leave_date": {"$lte": start}, "end_date": {"$gte": start}},
+            ],
+        })
+
+    def create_request(
+        self,
+        student_id: str,
+        leave_type: str,
+        duration: str,
+        leave_date: date,
+        reason: str,
+        half_day: Optional[str] = None,
+        end_date: Optional[date] = None,
+    ):
         if leave_type not in TYPE_TO_FIELD:
             raise ValueError("Invalid leave type.")
         if duration not in {"Full Day", "Half Day"}:
             raise ValueError("Duration must be Full Day or Half Day.")
         if len(reason.strip()) < 8:
             raise ValueError("Reason must be at least 8 characters.")
+
+        start_date = leave_date
         if duration == "Half Day":
             if leave_date != date.today():
                 raise ValueError("Half-day leave can only be requested for today.")
             if half_day not in {"Morning", "Afternoon"}:
                 raise ValueError("Choose Morning or Afternoon for a half-day leave.")
+            end_date = leave_date
             amount = 0.5
         else:
             half_day = None
-            if leave_date < date.today():
+            end_date = end_date or leave_date
+            if start_date < date.today():
                 raise ValueError("Full-day leave cannot be requested for a past date.")
-            amount = 1.0
+            if end_date < start_date:
+                raise ValueError("End date cannot be before the start date.")
+            amount = float((end_date - start_date).days + 1)
 
-        duplicate = self.requests.find_one({"student_id": student_id, "leave_date": leave_date.isoformat(), "status": {"$in": ["Pending", "Approved", "pending", "approved"]}})
+        duplicate = self._find_overlap(student_id, start_date, end_date)
         if duplicate:
-            raise ValueError("A leave request already exists for this date.")
+            raise ValueError("A leave request already exists for one or more selected dates.")
 
         field = TYPE_TO_FIELD[leave_type]
         balance = self._ensure_balance(student_id)
         if float(balance.get(field, 0)) < amount:
-            raise ValueError(f"Insufficient {leave_type} balance.")
+            raise ValueError(f"Insufficient {leave_type} balance. You need {amount:g} day(s).")
 
-        updated = self.balances.find_one_and_update({"student_id": student_id, field: {"$gte": amount}}, {"$inc": {field: -amount}, "$set": {"updated_at": datetime.utcnow()}}, return_document=ReturnDocument.AFTER, projection={"_id": 0})
+        updated = self.balances.find_one_and_update(
+            {"student_id": student_id, field: {"$gte": amount}},
+            {"$inc": {field: -amount}, "$set": {"updated_at": datetime.utcnow()}},
+            return_document=ReturnDocument.AFTER,
+            projection={"_id": 0},
+        )
         if not updated:
-            raise ValueError(f"Insufficient {leave_type} balance.")
+            raise ValueError(f"Insufficient {leave_type} balance. You need {amount:g} day(s).")
 
         doc = {
             "student_id": student_id,
             "leave_type": leave_type,
             "duration": duration,
             "half_day": half_day,
-            "leave_date": leave_date.isoformat(),
+            "leave_date": start_date.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
             "amount": amount,
             "reason": reason.strip(),
             "status": "Pending",
@@ -93,7 +134,10 @@ class LeaveManager:
         try:
             inserted = self.requests.insert_one(doc)
         except Exception:
-            self.balances.update_one({"student_id": student_id}, {"$inc": {field: amount}, "$set": {"updated_at": datetime.utcnow()}})
+            self.balances.update_one(
+                {"student_id": student_id},
+                {"$inc": {field: amount}, "$set": {"updated_at": datetime.utcnow()}},
+            )
             raise
         doc["leave_id"] = str(inserted.inserted_id)
         doc.pop("_id", None)
@@ -101,6 +145,10 @@ class LeaveManager:
 
     def get_student_requests(self, student_id: str):
         docs = list(self.requests.find({"student_id": student_id}, {"_id": 0}).sort("created_at", -1))
+        for doc in docs:
+            doc.setdefault("start_date", doc.get("leave_date"))
+            doc.setdefault("end_date", doc.get("leave_date"))
+            doc.setdefault("amount", 0.5 if doc.get("duration") == "Half Day" else 1.0)
         return docs
 
     def get_all_requests(self, status: Optional[str] = None):
@@ -110,6 +158,9 @@ class LeaveManager:
         docs = []
         for doc in self.requests.find(query).sort("created_at", -1):
             doc["leave_id"] = str(doc.pop("_id"))
+            doc.setdefault("start_date", doc.get("leave_date"))
+            doc.setdefault("end_date", doc.get("leave_date"))
+            doc.setdefault("amount", 0.5 if doc.get("duration") == "Half Day" else 1.0)
             docs.append(doc)
         return docs
 
@@ -127,11 +178,19 @@ class LeaveManager:
         if request.get("status") != "Pending":
             raise ValueError("This leave request has already been processed.")
 
-        self.requests.update_one({"_id": oid}, {"$set": {"status": status, "admin_note": admin_note.strip(), "updated_at": datetime.utcnow()}})
+        self.requests.update_one(
+            {"_id": oid},
+            {"$set": {"status": status, "admin_note": admin_note.strip(), "updated_at": datetime.utcnow()}},
+        )
         if status == "Rejected":
             field = TYPE_TO_FIELD.get(request.get("leave_type"))
             if field:
-                self.balances.update_one({"student_id": request["student_id"]}, {"$inc": {field: float(request.get("amount", 1))}, "$set": {"updated_at": datetime.utcnow()}})
+                self.balances.update_one(
+                    {"student_id": request["student_id"]},
+                    {"$inc": {field: float(request.get("amount", 1))}, "$set": {"updated_at": datetime.utcnow()}},
+                )
         result = self.requests.find_one({"_id": oid}, {"_id": 0})
         result["leave_id"] = leave_id
+        result.setdefault("start_date", result.get("leave_date"))
+        result.setdefault("end_date", result.get("leave_date"))
         return result
