@@ -25,6 +25,7 @@ from session_manager import SessionManager
 from user_manager import UserManager
 from auth_utils import hash_password, verify_password, create_access_token, get_current_user, require_admin
 from security_middleware import SecurityMiddleware
+from leave_api import router as leave_router
 
 app = FastAPI(title="VisionAttend AI API", version="1.1.0")
 
@@ -38,6 +39,7 @@ cors_origins = [
 ]
 app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["Authorization", "Content-Type"], allow_credentials=True)
 app.add_middleware(SecurityMiddleware)
+app.include_router(leave_router)
 
 attendance_manager = AttendanceManager(); face_database = FaceDatabase(); session_manager = SessionManager(); user_manager = UserManager(); face_recognizer = None
 PIPELINE_SCRIPT = PROJECT_ROOT / "ml" / "pipeline" / "attendance_pipeline.py"; pipeline_process = None
