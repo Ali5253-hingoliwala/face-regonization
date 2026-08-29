@@ -5,6 +5,7 @@ export type NotificationPayload = {
   title: string;
   text: string;
   kind: NotificationKind;
+  createdAt?: number | null;
 };
 
 export const NOTIFICATION_EVENT = "va:notification";
