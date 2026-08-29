@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BriefcaseBusiness, CalendarDays, ChevronDown, Clock3, Eye, HeartPulse, Plus, ShieldCheck, Sunrise, Sunset, X } from "lucide-react";
+import { BriefcaseBusiness, CalendarDays, ChevronDown, Clock3, HeartPulse, Plus, ShieldCheck, Sunrise, Sunset, X } from "lucide-react";
 import StudentSidebar from "../components/StudentSidebar";
 import { api } from "../api/client";
 
@@ -127,7 +127,7 @@ export default function StudentLeavePage() {
       return;
     }
     if (selectedBalance.remaining < amount) {
-      setError(`Insufficient ${leaveType} balance. You need ${amount:g} day(s), but only ${selectedBalance.remaining} remain.`);
+      setError(`Insufficient ${leaveType} balance. You need ${amount} day(s), but only ${selectedBalance.remaining} remain.`);
       return;
     }
 
