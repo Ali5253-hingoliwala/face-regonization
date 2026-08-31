@@ -6,7 +6,6 @@ from user_manager import UserManager
 
 router = APIRouter(tags=["Legal & Consent"])
 users = UserManager()
-
 TERMS_VERSION = os.getenv("TERMS_VERSION", "2026-08-31")
 PRIVACY_VERSION = os.getenv("PRIVACY_VERSION", "2026-08-31")
 COOKIE_VERSION = os.getenv("COOKIE_VERSION", "2026-08-31")
@@ -22,6 +21,11 @@ class ConsentRequest(BaseModel):
     cookie_analytics: bool = False
     cookie_marketing: bool = False
 
+class CookieRequest(BaseModel):
+    essential: bool = True
+    analytics: bool = False
+    marketing: bool = False
+
 @router.get("/legal/versions")
 def legal_versions():
     return {"terms": TERMS_VERSION, "privacy": PRIVACY_VERSION, "cookies": COOKIE_VERSION}
@@ -31,7 +35,6 @@ def record_consent(request: ConsentRequest, http_request: Request):
     if not request.terms_accepted or not request.privacy_accepted:
         return {"success": False, "required": ["terms", "privacy"], "message": "Terms and Privacy consent are required."}
     now = datetime.now(timezone.utc)
-    identity = request.username or request.student_id or request.email
     document = {
         "username": request.username,
         "student_id": request.student_id,
@@ -46,15 +49,20 @@ def record_consent(request: ConsentRequest, http_request: Request):
         "created_at": now,
         "updated_at": now,
     }
-    if identity:
-        try:
-            from hashlib import sha256
-            ip = http_request.client.host if http_request.client else ""
-            document["ip_hash"] = sha256(ip.encode()).hexdigest() if ip else None
-        except Exception:
-            pass
+    try:
+        from hashlib import sha256
+        ip = http_request.client.host if http_request.client else ""
+        document["ip_hash"] = sha256(ip.encode()).hexdigest() if ip else None
+    except Exception:
+        pass
     users.collection.database["consents"].insert_one(document)
     return {"success": True, "terms_version": TERMS_VERSION, "privacy_version": PRIVACY_VERSION}
+
+@router.post("/legal/cookies")
+def record_cookie_preferences(request: CookieRequest, http_request: Request):
+    now = datetime.now(timezone.utc)
+    users.collection.database["cookie_consents"].insert_one({"essential": True, "analytics": bool(request.analytics), "marketing": bool(request.marketing), "version": COOKIE_VERSION, "user_agent": http_request.headers.get("user-agent", "")[:500], "created_at": now})
+    return {"success": True, "version": COOKIE_VERSION}
 
 @router.get("/legal/consent")
 def get_consent(username: str):
