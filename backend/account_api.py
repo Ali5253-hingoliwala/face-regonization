@@ -34,11 +34,11 @@ def _send_verification(account):
     now=_now(); last=_utc(account.get("verification_last_sent_at"))
     if last and (now-last).total_seconds()<RESEND_COOLDOWN: raise HTTPException(429,f"Please wait {max(1,RESEND_COOLDOWN-int((now-last).total_seconds()))} seconds before requesting another email.")
     raw=secrets.token_urlsafe(32)
-    users.collection.update_one({"username":account["username"]},{"$set":{"email_verification_token_hash":_hash(raw),"email_verification_expires_at":now+timedelta(minutes=VERIFY_MINUTES),"verification_last_sent_at":now,"updated_at":now}})
+    users.collection.update_one({"_id":account["_id"]},{"$set":{"email_verification_token_hash":_hash(raw),"email_verification_expires_at":now+timedelta(minutes=VERIFY_MINUTES),"verification_last_sent_at":now,"updated_at":now}})
     link=f"{_frontend_url()}/verify-email?token={raw}"
     try: send_email(email,"Verify your VisionAttend AI email",f"Verify your VisionAttend AI email:\n\n{link}\n\nThis link expires in {VERIFY_MINUTES} minutes and can be used once.",f"<h2>Verify your VisionAttend AI email</h2><p><a href=\"{link}\">Verify email</a></p><p>This link expires in {VERIFY_MINUTES} minutes and can be used once.</p>")
-    except RuntimeError as exc: users.collection.update_one({"username":account["username"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(503,str(exc))
-    except Exception: users.collection.update_one({"username":account["username"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(502,"Verification email could not be sent. Check the mail server configuration.")
+    except RuntimeError as exc: users.collection.update_one({"_id":account["_id"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(503,str(exc))
+    except Exception: users.collection.update_one({"_id":account["_id"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(502,"Verification email could not be sent. Check the mail server configuration.")
     return {"success":True,"expires_in_minutes":VERIFY_MINUTES}
 def start_2fa_challenge(account):
     email=account.get("email")
@@ -46,9 +46,9 @@ def start_2fa_challenge(account):
     now=_now(); recent=_utc(account.get("two_factor_last_sent_at"))
     if recent and (now-recent).total_seconds()<RESEND_COOLDOWN: raise HTTPException(429,f"Please wait {max(1,RESEND_COOLDOWN-int((now-recent).total_seconds()))} seconds before requesting another OTP.")
     challenge=secrets.token_urlsafe(32); otp=f"{secrets.randbelow(1000000):06d}"
-    users.collection.update_one({"username":account["username"]},{"$set":{"two_factor_challenge_hash":_hash(challenge),"two_factor_otp_hash":_hash(otp),"two_factor_otp_expires_at":now+timedelta(minutes=OTP_MINUTES),"two_factor_attempts":0,"two_factor_last_sent_at":now,"updated_at":now}})
+    users.collection.update_one({"_id":account["_id"]},{"$set":{"two_factor_challenge_hash":_hash(challenge),"two_factor_otp_hash":_hash(otp),"two_factor_otp_expires_at":now+timedelta(minutes=OTP_MINUTES),"two_factor_attempts":0,"two_factor_last_sent_at":now,"updated_at":now}})
     try: send_email(email,"Your VisionAttend AI login code",f"Your VisionAttend AI verification code is {otp}. It expires in {OTP_MINUTES} minutes.",f"<h2>VisionAttend AI login code</h2><p style='font-size:28px;font-weight:bold;letter-spacing:8px'>{otp}</p><p>This code expires in {OTP_MINUTES} minutes.</p>")
-    except Exception: users.collection.update_one({"username":account["username"]},{"$unset":{"two_factor_challenge_hash":"","two_factor_otp_hash":"","two_factor_otp_expires_at":"","two_factor_attempts":"","two_factor_last_sent_at":""}}); raise HTTPException(502,"2FA code could not be sent. Check the mail server configuration.")
+    except Exception: users.collection.update_one({"_id":account["_id"]},{"$unset":{"two_factor_challenge_hash":"","two_factor_otp_hash":"","two_factor_otp_expires_at":"","two_factor_attempts":"","two_factor_last_sent_at":""}}); raise HTTPException(502,"2FA code could not be sent. Check the mail server configuration.")
     return {"challenge":challenge,"masked_email":f"{email[:2]}***@{email.split('@',1)[1]}","expires_in_minutes":OTP_MINUTES}
 def complete_2fa_challenge(challenge,code):
     account=users.collection.find_one({"two_factor_challenge_hash":_hash(challenge)})
@@ -88,9 +88,12 @@ def reset_password(request:ResetPasswordRequest):
     expires=_utc(account.get("password_reset_expires_at")) if account else None
     if not account or not expires or expires<=_now(): raise HTTPException(400,"Invalid or expired password reset link.")
     if account.get("is_active") is False or not account.get("email_verified"): raise HTTPException(400,"Password reset is unavailable for this account.")
-    users.update_password(account["username"],hash_password(request.new_password))
-    users.collection.update_one({"_id":account["_id"]},{"$unset":{"password_reset_token_hash":"","password_reset_expires_at":"","password_reset_last_sent_at":""},"$set":{"updated_at":_now()}})
-    return {"success":True,"message":"Password reset successfully. You can now log in with your new password."}
+    new_hash=hash_password(request.new_password)
+    result=users.collection.update_one({"_id":account["_id"]},{"$set":{"password_hash":new_hash,"updated_at":_now()},"$unset":{"password_reset_token_hash":"","password_reset_expires_at":"","password_reset_last_sent_at":""}})
+    if result.matched_count!=1: raise HTTPException(500,"The password could not be updated for this account.")
+    updated=users.collection.find_one({"_id":account["_id"]},{"password_hash":1,"username":1})
+    if not updated or not updated.get("password_hash") or not verify_password(request.new_password,updated["password_hash"]): raise HTTPException(500,"Password update verification failed. Please request a new reset link.")
+    return {"success":True,"message":"Password reset successfully. Your username remains unchanged; you can now log in with your new password."}
 @router.get("/account/profile")
 def account_profile(user=Depends(get_current_user)):
     account=_account(user); return {"username":account["username"],"name":account.get("name"),"role":account.get("role"),"student_id":account.get("student_id"),"email":account.get("email"),"gender":account.get("gender"),"profile_photo":account.get("profile_photo"),"email_verified":bool(account.get("email_verified")),"auth_provider":account.get("auth_provider","local"),"google_linked":bool(account.get("google_sub")),"is_active":account.get("is_active",True),"two_factor_enabled":bool(account.get("two_factor_enabled",False)),"created_at":account.get("created_at"),"last_login":account.get("last_login")}
@@ -111,7 +114,9 @@ def update_account_password(request:PasswordUpdate,user=Depends(get_current_user
     account=_account(user)
     if not account.get("password_hash"): raise HTTPException(400,"This account does not have a local password. Use Google sign-in.")
     if not verify_password(request.current_password,account["password_hash"]): raise HTTPException(401,"Current password is incorrect.")
-    users.update_password(account["username"],hash_password(request.new_password)); return {"success":True}
+    new_hash=hash_password(request.new_password); result=users.collection.update_one({"_id":account["_id"]},{"$set":{"password_hash":new_hash,"updated_at":_now()}})
+    if result.matched_count!=1: raise HTTPException(500,"The password could not be updated for this account.")
+    return {"success":True}
 @router.put("/account/photo")
 def update_account_photo(request:PhotoUpdate,user=Depends(get_current_user)):
     _account(user); data=request.image
@@ -125,7 +130,7 @@ def update_account_photo(request:PhotoUpdate,user=Depends(get_current_user)):
     users.update_profile_photo(user["sub"],data); return {"success":True}
 @router.delete("/account/photo")
 def remove_account_photo(user=Depends(get_current_user)):
-    account=_account(user); users.collection.update_one({"username":account["username"]},{"$unset":{"profile_photo":""},"$set":{"updated_at":_now()}}); return {"success":True,"profile_photo":None}
+    account=_account(user); users.collection.update_one({"_id":account["_id"]},{"$unset":{"profile_photo":""},"$set":{"updated_at":_now()}}); return {"success":True,"profile_photo":None}
 @router.get("/account/security")
 def account_security(user=Depends(get_current_user)):
     account=_account(user); return {"email":account.get("email"),"email_verified":bool(account.get("email_verified")),"google_linked":bool(account.get("google_sub")),"auth_provider":account.get("auth_provider","local"),"two_factor_enabled":bool(account.get("two_factor_enabled",False)),"active":account.get("is_active",True),"last_login":account.get("last_login")}
@@ -150,7 +155,7 @@ def verify_email(token:str):
 def enable_2fa(user=Depends(get_current_user)):
     account=_account(user)
     if not account.get("email") or not account.get("email_verified"): raise HTTPException(400,"Verify your email before enabling 2FA.")
-    users.collection.update_one({"username":account["username"]},{"$set":{"two_factor_enabled":True,"updated_at":_now()}}); return {"success":True,"two_factor_enabled":True}
+    users.collection.update_one({"_id":account["_id"]},{"$set":{"two_factor_enabled":True,"updated_at":_now()}}); return {"success":True,"two_factor_enabled":True}
 @router.post("/account/2fa/disable")
 def disable_2fa(user=Depends(get_current_user)):
-    account=_account(user); users.collection.update_one({"username":account["username"]},{"$set":{"two_factor_enabled":False,"updated_at":_now()}}); return {"success":True,"two_factor_enabled":False}
+    account=_account(user); users.collection.update_one({"_id":account["_id"]},{"$set":{"two_factor_enabled":False,"updated_at":_now()}}); return {"success":True,"two_factor_enabled":False}
