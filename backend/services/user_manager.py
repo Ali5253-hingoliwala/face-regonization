@@ -38,10 +38,10 @@ class UserManager:
         self.collection.update_many({"updated_at": {"$exists": False}}, {"$set": {"updated_at": now}})
         self.collection.update_many({"last_login": {"$exists": False}}, {"$set": {"last_login": None}})
 
-        # Preserve the existing username_1 index created by older versions.
         self.collection.create_index("username", unique=True)
         self.collection.create_index("email", unique=True, name="email_unique", partialFilterExpression={"email": {"$type": "string"}})
         self.collection.create_index("google_sub", unique=True, name="google_sub_unique", partialFilterExpression={"google_sub": {"$type": "string"}})
+        self.collection.create_index("student_id", name="student_id_lookup")
 
     @staticmethod
     def _clean_optional(value):
@@ -58,6 +58,7 @@ class UserManager:
     def create_user(self, username, password_hash, role, student_id=None, name=None, email=None, gender=None, auth_provider="local", google_sub=None, email_verified=False, profile_photo=None):
         now = datetime.now(timezone.utc)
         username = str(username).strip()
+        student_id = self._clean_optional(student_id)
         email = self._normalize_email(email)
         auth_provider = str(auth_provider or "local").strip().lower()
 
@@ -83,13 +84,22 @@ class UserManager:
         return doc
 
     def get_user(self, username_or_email):
-        """Find an account by username or normalized email for local login and profile operations."""
+        """Find an account by username, Student ID, or normalized email."""
         value = str(username_or_email).strip()
         if not value:
             return None
+
+        # Username is the canonical local-login identifier.
         user = self.collection.find_one({"username": value})
         if user is not None:
             return user
+
+        # Students can also log in with their Student ID.
+        user = self.collection.find_one({"student_id": value})
+        if user is not None:
+            return user
+
+        # Finally allow the account's registered email.
         return self.get_user_by_email(value)
 
     def get_user_by_username(self, username):
