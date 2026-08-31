@@ -9,12 +9,14 @@ from auth_utils import create_access_token, get_current_user, hash_password, ver
 from email_service import send_email
 from user_manager import UserManager
 router=APIRouter(tags=["Account & Security"]); users=UserManager()
-ALLOWED_GENDERS={"male","female","prefer not to say"}; VERIFY_MINUTES=30; OTP_MINUTES=10; OTP_MAX_ATTEMPTS=5; RESEND_COOLDOWN=60
+ALLOWED_GENDERS={"male","female","prefer not to say"}; VERIFY_MINUTES=30; OTP_MINUTES=10; OTP_MAX_ATTEMPTS=5; RESEND_COOLDOWN=60; RESET_MINUTES=30
 class ProfileUpdate(BaseModel): name:str=Field(min_length=2,max_length=100); email:str|None=Field(default=None,max_length=254); gender:str|None=Field(default=None,max_length=30)
 class PasswordUpdate(BaseModel): current_password:str=Field(min_length=1,max_length=72); new_password:str=Field(min_length=6,max_length=72); confirm_password:str=Field(min_length=6,max_length=72)
 class PhotoUpdate(BaseModel): image:str=Field(min_length=1,max_length=3500000)
 class VerifyCode(BaseModel): code:str=Field(min_length=6,max_length=6,pattern=r"^\d{6}$")
 class LoginRequest(BaseModel): username:str=Field(min_length=1,max_length=64); password:str=Field(min_length=1,max_length=72)
+class ForgotPasswordRequest(BaseModel): email:str=Field(min_length=3,max_length=254)
+class ResetPasswordRequest(BaseModel): token:str=Field(min_length=20,max_length=200); new_password:str=Field(min_length=6,max_length=72); confirm_password:str=Field(min_length=6,max_length=72)
 def _now(): return datetime.now(timezone.utc)
 def _utc(value):
     if value is None: return None
@@ -35,10 +37,8 @@ def _send_verification(account):
     users.collection.update_one({"username":account["username"]},{"$set":{"email_verification_token_hash":_hash(raw),"email_verification_expires_at":now+timedelta(minutes=VERIFY_MINUTES),"verification_last_sent_at":now,"updated_at":now}})
     link=f"{_frontend_url()}/verify-email?token={raw}"
     try: send_email(email,"Verify your VisionAttend AI email",f"Verify your VisionAttend AI email:\n\n{link}\n\nThis link expires in {VERIFY_MINUTES} minutes and can be used once.",f"<h2>Verify your VisionAttend AI email</h2><p><a href=\"{link}\">Verify email</a></p><p>This link expires in {VERIFY_MINUTES} minutes and can be used once.</p>")
-    except RuntimeError as exc:
-        users.collection.update_one({"username":account["username"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(503,str(exc))
-    except Exception:
-        users.collection.update_one({"username":account["username"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(502,"Verification email could not be sent. Check the mail server configuration.")
+    except RuntimeError as exc: users.collection.update_one({"username":account["username"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(503,str(exc))
+    except Exception: users.collection.update_one({"username":account["username"]},{"$unset":{"email_verification_token_hash":"","email_verification_expires_at":"","verification_last_sent_at":""}}); raise HTTPException(502,"Verification email could not be sent. Check the mail server configuration.")
     return {"success":True,"expires_in_minutes":VERIFY_MINUTES}
 def start_2fa_challenge(account):
     email=account.get("email")
@@ -48,8 +48,7 @@ def start_2fa_challenge(account):
     challenge=secrets.token_urlsafe(32); otp=f"{secrets.randbelow(1000000):06d}"
     users.collection.update_one({"username":account["username"]},{"$set":{"two_factor_challenge_hash":_hash(challenge),"two_factor_otp_hash":_hash(otp),"two_factor_otp_expires_at":now+timedelta(minutes=OTP_MINUTES),"two_factor_attempts":0,"two_factor_last_sent_at":now,"updated_at":now}})
     try: send_email(email,"Your VisionAttend AI login code",f"Your VisionAttend AI verification code is {otp}. It expires in {OTP_MINUTES} minutes.",f"<h2>VisionAttend AI login code</h2><p style='font-size:28px;font-weight:bold;letter-spacing:8px'>{otp}</p><p>This code expires in {OTP_MINUTES} minutes.</p>")
-    except Exception:
-        users.collection.update_one({"username":account["username"]},{"$unset":{"two_factor_challenge_hash":"","two_factor_otp_hash":"","two_factor_otp_expires_at":"","two_factor_attempts":"","two_factor_last_sent_at":""}}); raise HTTPException(502,"2FA code could not be sent. Check the mail server configuration.")
+    except Exception: users.collection.update_one({"username":account["username"]},{"$unset":{"two_factor_challenge_hash":"","two_factor_otp_hash":"","two_factor_otp_expires_at":"","two_factor_attempts":"","two_factor_last_sent_at":""}}); raise HTTPException(502,"2FA code could not be sent. Check the mail server configuration.")
     return {"challenge":challenge,"masked_email":f"{email[:2]}***@{email.split('@',1)[1]}","expires_in_minutes":OTP_MINUTES}
 def complete_2fa_challenge(challenge,code):
     account=users.collection.find_one({"two_factor_challenge_hash":_hash(challenge)})
@@ -57,8 +56,7 @@ def complete_2fa_challenge(challenge,code):
     expires_at=_utc(account.get("two_factor_otp_expires_at"))
     if not expires_at or expires_at<=_now(): raise HTTPException(401,"The 2FA code has expired. Please log in again.")
     if int(account.get("two_factor_attempts",0))>=OTP_MAX_ATTEMPTS: raise HTTPException(429,"Too many incorrect 2FA attempts. Please log in again.")
-    if not secrets.compare_digest(account.get("two_factor_otp_hash",""),_hash(code)):
-        users.collection.update_one({"_id":account["_id"]},{"$inc":{"two_factor_attempts":1}}); raise HTTPException(401,"Incorrect 2FA code.")
+    if not secrets.compare_digest(account.get("two_factor_otp_hash",""),_hash(code)): users.collection.update_one({"_id":account["_id"]},{"$inc":{"two_factor_attempts":1}}); raise HTTPException(401,"Incorrect 2FA code.")
     users.collection.update_one({"_id":account["_id"]},{"$unset":{"two_factor_challenge_hash":"","two_factor_otp_hash":"","two_factor_otp_expires_at":"","two_factor_attempts":"","two_factor_last_sent_at":""}}); users.mark_login(account["username"])
     return {"access_token":create_access_token(username=account["username"],role=account["role"],student_id=account.get("student_id"),name=account.get("name")),"token_type":"bearer","role":account["role"],"name":account.get("name"),"student_id":account.get("student_id")}
 @router.post("/auth/login")
@@ -66,11 +64,33 @@ def account_login(request:LoginRequest):
     user=users.get_user(request.username)
     if user is None or not user.get("password_hash") or not verify_password(request.password,user["password_hash"]): raise HTTPException(401,"Incorrect username or password.")
     if user.get("is_active") is False: raise HTTPException(403,"This account is disabled.")
-    if user.get("two_factor_enabled"):
-        challenge=start_2fa_challenge(user); return {"requires_2fa":True,**challenge}
+    if user.get("two_factor_enabled"): challenge=start_2fa_challenge(user); return {"requires_2fa":True,**challenge}
     users.mark_login(user["username"]); return {"access_token":create_access_token(username=user["username"],role=user["role"],student_id=user.get("student_id"),name=user.get("name")),"token_type":"bearer","role":user["role"],"name":user.get("name"),"student_id":user.get("student_id")}
 @router.post("/auth/2fa/verify")
 def verify_2fa(request:VerifyCode,challenge:str): return complete_2fa_challenge(challenge,request.code)
+@router.post("/auth/password/forgot")
+def forgot_password(request:ForgotPasswordRequest):
+    email=request.email.strip().lower(); account=users.collection.find_one({"email":email})
+    generic={"success":True,"message":"If an eligible account exists, password-reset instructions have been sent to its verified email."}
+    if not account or account.get("is_active") is False or not account.get("email_verified"): return generic
+    now=_now(); last=_utc(account.get("password_reset_last_sent_at"))
+    if last and (now-last).total_seconds()<RESEND_COOLDOWN: return generic
+    raw=secrets.token_urlsafe(32); users.collection.update_one({"_id":account["_id"]},{"$set":{"password_reset_token_hash":_hash(raw),"password_reset_expires_at":now+timedelta(minutes=RESET_MINUTES),"password_reset_last_sent_at":now,"updated_at":now}})
+    link=f"{_frontend_url()}/reset-password?token={raw}"
+    try: send_email(email,"Reset your VisionAttend AI password",f"Reset your password:\n\n{link}\n\nThis link expires in {RESET_MINUTES} minutes and can be used once.",f"<h2>Reset your VisionAttend AI password</h2><p><a href=\"{link}\">Reset password</a></p><p>This link expires in {RESET_MINUTES} minutes and can be used once.</p>")
+    except Exception:
+        users.collection.update_one({"_id":account["_id"]},{"$unset":{"password_reset_token_hash":"","password_reset_expires_at":"","password_reset_last_sent_at":""}})
+    return generic
+@router.post("/auth/password/reset")
+def reset_password(request:ResetPasswordRequest):
+    if request.new_password!=request.confirm_password: raise HTTPException(422,"New passwords do not match.")
+    account=users.collection.find_one({"password_reset_token_hash":_hash(request.token)})
+    expires=_utc(account.get("password_reset_expires_at")) if account else None
+    if not account or not expires or expires<=_now(): raise HTTPException(400,"Invalid or expired password reset link.")
+    if account.get("is_active") is False or not account.get("email_verified"): raise HTTPException(400,"Password reset is unavailable for this account.")
+    users.update_password(account["username"],hash_password(request.new_password))
+    users.collection.update_one({"_id":account["_id"]},{"$unset":{"password_reset_token_hash":"","password_reset_expires_at":"","password_reset_last_sent_at":""},"$set":{"updated_at":_now()}})
+    return {"success":True,"message":"Password reset successfully. You can now log in with your new password."}
 @router.get("/account/profile")
 def account_profile(user=Depends(get_current_user)):
     account=_account(user); return {"username":account["username"],"name":account.get("name"),"role":account.get("role"),"student_id":account.get("student_id"),"email":account.get("email"),"gender":account.get("gender"),"profile_photo":account.get("profile_photo"),"email_verified":bool(account.get("email_verified")),"auth_provider":account.get("auth_provider","local"),"google_linked":bool(account.get("google_sub")),"is_active":account.get("is_active",True),"two_factor_enabled":bool(account.get("two_factor_enabled",False)),"created_at":account.get("created_at"),"last_login":account.get("last_login")}
@@ -105,9 +125,7 @@ def update_account_photo(request:PhotoUpdate,user=Depends(get_current_user)):
     users.update_profile_photo(user["sub"],data); return {"success":True}
 @router.delete("/account/photo")
 def remove_account_photo(user=Depends(get_current_user)):
-    account=_account(user)
-    users.collection.update_one({"username":account["username"]},{"$unset":{"profile_photo":""},"$set":{"updated_at":_now()}})
-    return {"success":True,"profile_photo":None}
+    account=_account(user); users.collection.update_one({"username":account["username"]},{"$unset":{"profile_photo":""},"$set":{"updated_at":_now()}}); return {"success":True,"profile_photo":None}
 @router.get("/account/security")
 def account_security(user=Depends(get_current_user)):
     account=_account(user); return {"email":account.get("email"),"email_verified":bool(account.get("email_verified")),"google_linked":bool(account.get("google_sub")),"auth_provider":account.get("auth_provider","local"),"two_factor_enabled":bool(account.get("two_factor_enabled",False)),"active":account.get("is_active",True),"last_login":account.get("last_login")}
