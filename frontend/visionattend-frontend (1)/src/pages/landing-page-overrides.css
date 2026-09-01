@@ -1,21 +1,18 @@
-/* Final landing-page polish. Scoped to .landing-page so portal UI remains untouched. */
+/* Landing-page-only polish. Portal styles remain untouched. */
 
 .landing-page #about{background:var(--gradient-brand);color:var(--white);overflow:hidden;}
 .landing-page #about .about-copy h2,.landing-page #about .about-card h3{color:var(--white);}
 .landing-page #about .about-copy p,.landing-page #about .about-card p{color:rgba(255,255,255,.76);}
 
-/* Contact: three balanced cards */
+/* Contact: balanced three-card layout with real semantic content. */
 .landing-page #contact .contact-grid{grid-template-columns:repeat(3,minmax(0,1fr));max-width:1120px;gap:22px;}
 .landing-page #contact .contact-card{min-height:300px;display:flex;flex-direction:column;}
 .landing-page #contact .contact-card:nth-child(1) .contact-actions{align-items:center;gap:14px;margin-top:auto;padding-top:24px;}
 .landing-page #contact .contact-card:nth-child(2) .btn{margin-top:auto;align-self:flex-start;}
-.landing-page #contact .contact-card:nth-child(2) p{max-width:380px;}
-.landing-page #contact .contact-card:first-child .contact-email{display:none;}
+.landing-page #contact .contact-card:nth-child(3) .contact-email{display:inline-flex;align-items:center;gap:8px;margin-top:auto;padding-top:22px;color:var(--teal-600);font-size:.9rem;font-weight:800;word-break:break-word;text-decoration:none;}
+.landing-page #contact .contact-card:nth-child(3) .contact-email:hover{color:var(--teal-800);text-decoration:underline;text-underline-offset:3px;}
 
-/* Third card: support / email */
-.landing-page #contact .contact-grid::after{content:"Support & feedback\\A\\AFor bugs, project issues, feedback, or questions about VisionAttend, send us an email and we’ll get back to you.\\A\\Aaliasgarhingoliwala786@gmail.com";white-space:pre-line;min-height:300px;padding:32px;border-radius:var(--radius-lg);background:var(--white);border:1px solid var(--mint-100);box-shadow:var(--shadow-sm);color:var(--teal-800);font-family:var(--font-body);font-size:.92rem;line-height:1.65;}
-
-/* Footer: separate Legal and Account */
+/* Footer: keep Legal and Account visually distinct without touching portal UI. */
 .landing-page .footer-grid{grid-template-columns:1.5fr .8fr 1.35fr;gap:50px;}
 .landing-page .footer-col:last-child{position:relative;}
 .landing-page .footer-col:last-child h5{font-size:0;position:relative;}
@@ -33,7 +30,6 @@
 
 @media (max-width:1000px){
   .landing-page #contact .contact-grid{grid-template-columns:1fr;}
-  .landing-page #contact .contact-grid::after{min-height:0;}
   .landing-page .footer-grid{grid-template-columns:1fr 1fr;}
 }
 @media (max-width:680px){
