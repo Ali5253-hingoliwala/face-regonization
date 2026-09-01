@@ -1,6 +1,7 @@
 /**
  * Landing-page scanner portrait layer.
- * Keeps the existing scanner frame, beam, labels and verified badge intact.
+ * Uses the supplied transparent portrait while preserving the original
+ * scanner frame, beam, labels and verified badge.
  */
 export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
   const frame = canvas.parentElement;
@@ -12,7 +13,7 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     };
   }
 
-  // Disable the old canvas/model while keeping the existing scanner surface.
+  // Disable the old 3D canvas/model.
   canvas.style.display = "none";
 
   const image = document.createElement("img");
@@ -24,20 +25,24 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     position: "absolute",
     zIndex: "2",
     left: "50%",
-    bottom: "0",
-    width: "62%",
-    height: "84%",
+    bottom: "1%",
+    width: "56%",
+    height: "80%",
     transform: "translateX(-50%)",
     objectFit: "contain",
     objectPosition: "center bottom",
     pointerEvents: "none",
     userSelect: "none",
     display: "block",
+    // Softly fade the bottom of the portrait so the source image does not
+    // create a visible rectangular edge inside the scanner.
+    WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 84%, transparent 100%)",
+    maskImage: "linear-gradient(to bottom, #000 0%, #000 84%, transparent 100%)",
   });
 
   frame.appendChild(image);
 
-  // Scanner UI stays in front of the portrait.
+  // Keep the original scanner UI above the portrait.
   frame.querySelectorAll<HTMLElement>(".scan-line").forEach((el) => {
     el.style.zIndex = "7";
   });
@@ -50,18 +55,12 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     el.style.zIndex = "9";
   });
 
-  frame.querySelectorAll<HTMLElement>(".status-chip").forEach((el) => {
-    el.style.zIndex = "10";
-  });
-
   return () => {
     image.remove();
     canvas.style.display = "";
 
     frame
-      .querySelectorAll<HTMLElement>(
-        ".corner, .scan-line, .scan-label, .status-chip",
-      )
+      .querySelectorAll<HTMLElement>(".corner, .scan-line, .scan-label")
       .forEach((el) => {
         el.style.removeProperty("z-index");
       });
