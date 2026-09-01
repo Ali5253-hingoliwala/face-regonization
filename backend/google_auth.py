@@ -6,7 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -16,7 +16,7 @@ RECOGNITION_DIR = PROJECT_ROOT / "ml" / "recognition"
 ATTENDANCE_DIR = PROJECT_ROOT / "ml" / "attendance"
 sys.path.append(str(RECOGNITION_DIR)); sys.path.append(str(ATTENDANCE_DIR))
 
-from auth_utils import create_access_token, hash_password
+from auth_utils import create_access_token, hash_password, get_current_user
 from user_manager import UserManager
 from database import FaceDatabase
 from recognizer import FaceRecognizer
@@ -142,3 +142,34 @@ def google_auth(request: GoogleAuthRequest):
         face_database.delete_person(student_id)
         raise HTTPException(status_code=409, detail="An account for this student already exists.")
     return {"success": True, "onboarding_required": False, "new_account": True, **_token_for(user)}
+
+
+@router.post("/account/google/link")
+def link_google_account(request: GoogleAuthRequest, user=Depends(get_current_user)):
+    """Link a verified Google identity to the currently authenticated account."""
+    info = _verify_google_credential(request.credential)
+    account = user_manager.get_user(user["sub"])
+    if account is None or account.get("is_active") is False:
+        raise HTTPException(status_code=401, detail="Account is unavailable.")
+
+    google_sub = info["sub"]
+    google_email = info["email"].strip().lower()
+    existing = user_manager.get_user_by_google_sub(google_sub)
+    if existing and existing.get("username") != account.get("username"):
+        raise HTTPException(status_code=409, detail="This Google account is already linked to another VisionAttend account.")
+
+    account_email = (account.get("email") or "").strip().lower()
+    if not account_email:
+        raise HTTPException(status_code=400, detail="Add an email address to your VisionAttend account before linking Google.")
+    if account_email != google_email:
+        raise HTTPException(status_code=409, detail="The Google email must match the verified email on your VisionAttend account.")
+    if not account.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Verify your VisionAttend email before linking Google.")
+
+    try:
+        updated = user_manager.set_google_identity(account["username"], google_sub)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=500, detail="Google account could not be linked.")
+    return {"success": True, "linked": True, "email": google_email}
