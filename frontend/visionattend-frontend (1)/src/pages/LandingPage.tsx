@@ -15,16 +15,6 @@ export default function LandingPage() {
     document.title = "VisionAttend — AI Face Recognition Attendance System";
     root.innerHTML = template;
 
-    const contactCard = root.querySelector<HTMLElement>("#contact .contact-card");
-    if (contactCard && !contactCard.querySelector(".contact-email")) {
-      const email = document.createElement("a");
-      email.className = "contact-email";
-      email.href = "mailto:aliasgarhingoliwala786@gmail.com";
-      email.textContent = "aliasgarhingoliwala786@gmail.com";
-      email.setAttribute("aria-label", "Email VisionAttend support");
-      contactCard.appendChild(email);
-    }
-
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const canHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     const cleanups: Array<() => void> = [];
@@ -142,21 +132,7 @@ export default function LandingPage() {
         on(card, "pointermove", move);
         on(card, "pointerleave", leave);
       });
-
-      const scanFrame = root.querySelector<HTMLElement>("#scan-frame");
-      const heroSection = root.querySelector<HTMLElement>(".hero");
-      if (scanFrame && heroSection) {
-        const move = (event: Event) => {
-          const pointer = event as PointerEvent;
-          const rect = heroSection.getBoundingClientRect();
-          const x = (pointer.clientX - rect.left) / rect.width - 0.5;
-          const y = (pointer.clientY - rect.top) / rect.height - 0.5;
-          scanFrame.style.transform = `rotateY(${(x * 14).toFixed(2)}deg) rotateX(${(-y * 14).toFixed(2)}deg)`;
-        };
-        const leave = () => { scanFrame.style.transform = "rotateY(0deg) rotateX(0deg)"; };
-        on(heroSection, "pointermove", move);
-        on(heroSection, "pointerleave", leave);
-      }
+      // Scanner tilt intentionally removed. The biometric frame stays stable and calm.
     }
 
     const canvas = root.querySelector<HTMLCanvasElement>("#face-canvas");
@@ -166,31 +142,38 @@ export default function LandingPage() {
         let width = 0;
         let height = 0;
         let dpr = Math.min(window.devicePixelRatio || 1, 2);
-        let points: Array<{ bx: number; by: number; feature: boolean; phase: number; amp: number }> = [];
+        let points: Array<{ x: number; y: number; feature?: boolean }> = [];
+        let connections: Array<[number, number]> = [];
         let raf = 0;
         let resizeTimer = 0;
-        const NODE_COLOR = "rgba(183, 212, 199, 0.85)";
-        const LINE_COLOR = "rgba(120, 175, 174, 0.35)";
-        const FEATURE_COLOR = "rgba(255, 255, 255, 0.9)";
+
+        // Clean, deterministic facial landmark structure adapted from the 3D experiment.
+        // The original 3D experiment uses these landmarks and connections to create
+        // a recognizable face instead of a random particle cloud.
+        const LANDMARKS: Array<[number, number, boolean?]> = [
+          [-0.55, 0.55], [-0.28, 0.68], [0, 0.72], [0.28, 0.68], [0.55, 0.55],
+          [-0.38, 0.32], [-0.15, 0.35], [0.15, 0.35], [0.38, 0.32],
+          [0, 0.05, true],
+          [-0.35, -0.18], [-0.12, -0.22], [0.12, -0.22], [0.35, -0.18],
+          [-0.45, -0.52], [-0.20, -0.62], [0, -0.66, true], [0.20, -0.62], [0.45, -0.52],
+        ];
+        const CONNECTIONS: Array<[number, number]> = [
+          [0, 1], [1, 2], [2, 3], [3, 4],
+          [0, 5], [1, 5], [1, 6], [2, 6], [2, 7], [3, 7], [3, 8], [4, 8],
+          [5, 6], [6, 7], [7, 8], [6, 9], [7, 9],
+          [5, 10], [6, 10], [6, 11], [7, 11], [7, 12], [8, 12], [8, 13],
+          [10, 11], [11, 12], [12, 13],
+          [10, 14], [10, 15], [11, 15], [11, 16], [12, 16], [12, 17], [13, 17], [13, 18],
+          [14, 15], [15, 16], [16, 17], [17, 18],
+        ];
 
         const buildPoints = () => {
-          points = [];
-          const cx = 0.5;
-          const cy = 0.52;
-          for (let i = 0; i < 34; i++) {
-            const t = (i / 34) * Math.PI * 2;
-            const rx = 0.30 + Math.sin(t * 3) * 0.012;
-            const ry = 0.40 + Math.cos(t * 2) * 0.012;
-            points.push({ bx: cx + Math.cos(t) * rx, by: cy + Math.sin(t) * ry * 1.02, feature: false, phase: Math.random() * Math.PI * 2, amp: 0.006 + Math.random() * 0.006 });
-          }
-          for (let i = 0; i < 26; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * 0.24;
-            points.push({ bx: cx + Math.cos(angle) * dist * 1.05, by: cy + Math.sin(angle) * dist * 1.25 - 0.02, feature: false, phase: Math.random() * Math.PI * 2, amp: 0.005 + Math.random() * 0.008 });
-          }
-          [[cx - 0.11, cy - 0.06], [cx + 0.11, cy - 0.06], [cx, cy + 0.02], [cx, cy + 0.07], [cx - 0.09, cy + 0.17], [cx + 0.09, cy + 0.17], [cx, cy + 0.20], [cx - 0.18, cy - 0.10], [cx + 0.18, cy - 0.10]].forEach(([bx, by]) => {
-            points.push({ bx, by, feature: true, phase: Math.random() * Math.PI * 2, amp: 0.004 });
-          });
+          points = LANDMARKS.map(([x, y, feature]) => ({
+            x: 0.5 + x * 0.42,
+            y: 0.50 - y * 0.54,
+            feature,
+          }));
+          connections = CONNECTIONS;
         };
 
         const resize = () => {
@@ -206,34 +189,50 @@ export default function LandingPage() {
         const frame = (t: number) => {
           ctx.clearRect(0, 0, width, height);
           const time = t / 1000;
-          const live = points.map((p) => {
-            const wob = prefersReducedMotion ? 0 : Math.sin(time * 0.9 + p.phase) * p.amp;
-            return { x: (p.bx + wob) * width, y: (p.by + wob * 0.6) * height, feature: p.feature };
+          const drift = prefersReducedMotion ? 0 : Math.sin(time * 0.75) * 0.0025;
+          const pulse = prefersReducedMotion ? 0.35 : (Math.sin(time * 2.2) + 1) / 2;
+          const live = points.map((p, index) => ({
+            x: (p.x + drift * (index % 2 === 0 ? 1 : -1)) * width,
+            y: (p.y + drift * 0.45) * height,
+            feature: Boolean(p.feature),
+          }));
+
+          // Face mesh lines: restrained opacity keeps the structure readable.
+          ctx.lineWidth = 0.8;
+          connections.forEach(([from, to]) => {
+            const a = live[from];
+            const b = live[to];
+            if (!a || !b) return;
+            ctx.strokeStyle = `rgba(150, 205, 198, ${0.16 + pulse * 0.10})`;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
           });
-          const maxDist = Math.min(width, height) * 0.16;
-          ctx.lineWidth = 1;
-          for (let i = 0; i < live.length; i++) {
-            for (let j = i + 1; j < live.length; j++) {
-              const dx = live[i].x - live[j].x;
-              const dy = live[i].y - live[j].y;
-              const d = Math.sqrt(dx * dx + dy * dy);
-              if (d < maxDist) {
-                ctx.strokeStyle = LINE_COLOR;
-                ctx.globalAlpha = 1 - d / maxDist;
-                ctx.beginPath();
-                ctx.moveTo(live[i].x, live[i].y);
-                ctx.lineTo(live[j].x, live[j].y);
-                ctx.stroke();
-              }
-            }
-          }
-          ctx.globalAlpha = 1;
+
+          // Soft outer facial contour to make the landmark pattern read as a face.
+          const contour = [0, 1, 2, 3, 4, 8, 13, 18, 17, 16, 15, 14, 10, 5, 0];
+          ctx.strokeStyle = "rgba(190, 224, 216, 0.30)";
+          ctx.lineWidth = 1.15;
+          ctx.beginPath();
+          contour.forEach((index, i) => {
+            const p = live[index];
+            if (!p) return;
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.stroke();
+
           live.forEach((p) => {
             ctx.beginPath();
-            ctx.fillStyle = p.feature ? FEATURE_COLOR : NODE_COLOR;
-            ctx.arc(p.x, p.y, p.feature ? 2.6 : 1.8, 0, Math.PI * 2);
+            ctx.fillStyle = p.feature ? "rgba(255, 255, 255, 0.98)" : "rgba(206, 231, 222, 0.86)";
+            ctx.shadowBlur = p.feature ? 8 : 3;
+            ctx.shadowColor = "rgba(150, 224, 213, 0.55)";
+            ctx.arc(p.x, p.y, p.feature ? 2.5 : 1.7, 0, Math.PI * 2);
             ctx.fill();
           });
+          ctx.shadowBlur = 0;
+
           if (!prefersReducedMotion) raf = window.requestAnimationFrame(frame);
         };
 
