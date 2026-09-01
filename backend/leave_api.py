@@ -90,3 +90,23 @@ def decide_leave(leave_id: str, request: LeaveDecisionBody, admin=Depends(requir
 @router.get("/admin/leaves/balance/{student_id}")
 def get_student_leave_balance(student_id: str, admin=Depends(require_admin)):
     return {"student_id": student_id, "balances": leave_manager.get_balance(student_id)}
+
+@router.get("/admin/students")
+def get_admin_students(admin=Depends(require_admin)):
+    users = get_database()["users"]
+    docs = users.find(
+        {"role": "student"},
+        {"_id": 0, "password_hash": 0, "google_sub": 0}
+    ).sort("name", 1)
+    students = []
+    for account in docs:
+        students.append({
+            "student_id": account.get("student_id") or account.get("username"),
+            "username": account.get("username"),
+            "name": account.get("name") or account.get("username"),
+            "email": account.get("email"),
+            "gender": account.get("gender"),
+            "email_verified": bool(account.get("email_verified")),
+            "auth_provider": account.get("auth_provider", "local"),
+        })
+    return {"count": len(students), "students": students}
