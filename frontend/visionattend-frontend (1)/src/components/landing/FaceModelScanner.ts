@@ -15,20 +15,17 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-  camera.position.set(0, 0, 4.8);
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  camera.position.set(0, 0, 4.6);
 
   const root = new THREE.Group();
-  root.position.set(0, -0.02, 0);
+  // The source GLB faces away from the landing-page camera.
+  root.rotation.y = Math.PI;
   scene.add(root);
-
-  const ambient = new THREE.AmbientLight(0xffffff, 1.8);
-  scene.add(ambient);
 
   const loader = new GLTFLoader();
   let disposed = false;
   let animationFrame = 0;
-  let model: THREE.Object3D | null = null;
   const pointMaterials: THREE.PointsMaterial[] = [];
 
   const resize = () => {
@@ -40,99 +37,104 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     renderer.setSize(width, height, false);
   };
 
-  const createPointCloud = (source: THREE.BufferGeometry) => {
-    const position = source.getAttribute("position");
-    if (!position) return;
-
-    const count = position.count;
-    const target = Math.min(1450, count);
-    const stride = Math.max(1, Math.floor(count / target));
-    const values: number[] = [];
-
-    for (let i = 0; i < count; i += stride) {
-      values.push(position.getX(i), position.getY(i), position.getZ(i));
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(values, 3),
-    );
-
-    const material = new THREE.PointsMaterial({
-      color: 0xf4fffb,
-      size: 0.018,
-      transparent: true,
-      opacity: 0.92,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    pointMaterials.push(material);
-
-    return new THREE.Points(geometry, material);
-  };
-
   loader.load(
     MODEL_URL,
     (gltf) => {
       if (disposed) return;
 
-      model = gltf.scene;
-      model.traverse((child) => {
+      const source = gltf.scene;
+      source.updateMatrixWorld(true);
+
+      const vertices: THREE.Vector3[] = [];
+
+      source.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;
 
-        const mesh = child;
-        const geometry = mesh.geometry;
-        const points = createPointCloud(geometry);
+        const position = child.geometry.getAttribute("position");
+        if (!position) return;
 
-        const wireMaterial = new THREE.MeshBasicMaterial({
-          color: 0x65c9c1,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.11,
-          depthWrite: false,
-        });
+        const vertex = new THREE.Vector3();
+        const stride = Math.max(1, Math.floor(position.count / 2600));
 
-        mesh.material = wireMaterial;
-        mesh.renderOrder = 1;
-
-        if (points) {
-          points.renderOrder = 3;
-          mesh.add(points);
+        for (let i = 0; i < position.count; i += stride) {
+          vertex.set(
+            position.getX(i),
+            position.getY(i),
+            position.getZ(i),
+          );
+          vertex.applyMatrix4(child.matrixWorld);
+          vertices.push(vertex.clone());
         }
       });
 
-      const box = new THREE.Box3().setFromObject(model);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      const maxSize = Math.max(size.x, size.y, size.z) || 1;
-      const scale = 2.45 / maxSize;
+      if (!vertices.length) return;
 
-      model.position.sub(center);
-      model.scale.setScalar(scale);
-      model.position.y -= 0.03;
-      root.add(model);
+      // The source is a head/bust mesh. Drop the lowest part of the neck
+      // so the scanner is framed around the actual face/head.
+      const sourceBox = new THREE.Box3().setFromPoints(vertices);
+      const sourceHeight = sourceBox.max.y - sourceBox.min.y;
+      const headMinY = sourceBox.min.y + sourceHeight * 0.16;
+      const faceVertices = vertices.filter((vertex) => vertex.y >= headMinY);
+
+      if (!faceVertices.length) return;
+
+      const faceBox = new THREE.Box3().setFromPoints(faceVertices);
+      const center = faceBox.getCenter(new THREE.Vector3());
+      const size = faceBox.getSize(new THREE.Vector3());
+      const maxSize = Math.max(size.x, size.y, size.z) || 1;
+      const scale = 2.25 / maxSize;
+
+      const positions = new Float32Array(faceVertices.length * 3);
+      faceVertices.forEach((vertex, index) => {
+        positions[index * 3] = (vertex.x - center.x) * scale;
+        positions[index * 3 + 1] = (vertex.y - center.y) * scale;
+        positions[index * 3 + 2] = (vertex.z - center.z) * scale;
+      });
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3),
+      );
+      geometry.computeBoundingSphere();
+
+      const material = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.016,
+        transparent: true,
+        opacity: 0.9,
+        sizeAttenuation: true,
+        blending: THREE.AdditiveBlending,
+        depthTest: false,
+        depthWrite: false,
+      });
+
+      pointMaterials.push(material);
+
+      const points = new THREE.Points(geometry, material);
+      points.renderOrder = 5;
+      points.position.y = -0.01;
+      root.add(points);
     },
     undefined,
     () => {
-      // Keep the scanner frame usable if the remote model is unavailable.
+      // Keep the scanner frame usable if the model cannot be loaded.
     },
   );
 
   const animate = (time: number) => {
     if (disposed) return;
+
     const elapsed = time / 1000;
+    const pulse = 0.82 + (Math.sin(elapsed * 2.3) + 1) * 0.09;
 
-    // No mouse tilt and no aggressive 360° movement — only a restrained biometric drift.
-    root.rotation.y = Math.sin(elapsed * 0.45) * 0.025;
-    root.rotation.x = Math.sin(elapsed * 0.35) * 0.008;
-
-    const pulse = 0.86 + Math.sin(elapsed * 2.1) * 0.12;
     pointMaterials.forEach((material) => {
       material.opacity = pulse;
-      material.size = 0.017 + pulse * 0.002;
+      material.size = 0.014 + pulse * 0.002;
     });
+
+    // Very subtle movement; no mouse tilt and no spinning.
+    root.rotation.y = Math.PI + Math.sin(elapsed * 0.45) * 0.018;
 
     resize();
     renderer.render(scene, camera);
@@ -151,13 +153,17 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
 
     scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Points)) return;
+
       object.geometry.dispose();
       const material = object.material;
-      if (Array.isArray(material)) material.forEach((item) => item.dispose());
-      else material.dispose();
+
+      if (Array.isArray(material)) {
+        material.forEach((item) => item.dispose());
+      } else {
+        material.dispose();
+      }
     });
 
     renderer.dispose();
-    model = null;
   };
 }
