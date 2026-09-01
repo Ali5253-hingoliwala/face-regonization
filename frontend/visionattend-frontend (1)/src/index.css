@@ -39,22 +39,10 @@ body { background-color: var(--color-bg); color: var(--color-ink); font-family: 
 input, select, textarea { color: var(--color-ink); }
 input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opacity: 1; }
 
-.portal-active main {
-  width: calc(100% - var(--portal-sidebar-offset, 0px)) !important;
-  max-width: none !important;
-  margin-left: var(--portal-sidebar-offset, 0px) !important;
-  margin-right: 0 !important;
-  transition: margin-left .3s ease, width .3s ease, max-width .3s ease, padding .3s ease;
-  box-sizing: border-box;
-}
+.portal-active main { width: calc(100% - var(--portal-sidebar-offset, 0px)) !important; max-width: none !important; margin-left: var(--portal-sidebar-offset, 0px) !important; margin-right: 0 !important; transition: margin-left .3s ease, width .3s ease, max-width .3s ease, padding .3s ease; }
 .portal-active .lg\\:pl-64 { padding-left: 0 !important; }
 
-@media (max-width: 1023px) {
-  .portal-active main {
-    width: 100% !important;
-    margin-left: 0 !important;
-  }
-}
+@media (max-width: 1023px) { .portal-active main { width: 100% !important; margin-left: 0 !important; } }
 
 .dark {
   --color-bg: #0b1220;
@@ -91,6 +79,7 @@ input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opaci
 .dark .text-green-700 { color: #65c7a5 !important; }
 .dark .text-red-600 { color: #ff8b8b !important; }
 
+/* Keep semantic pastel cards, but make their icons readable in dark mode. */
 .dark .bg-blue-soft svg,
 .dark .bg-sky-soft svg,
 .dark .bg-mint-soft svg,
@@ -98,7 +87,19 @@ input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opaci
 .dark .bg-rose-soft svg,
 .dark .bg-lavender-soft svg,
 .dark .bg-peach-soft svg,
-.dark .bg-accent-soft svg { color: #f2b95d !important; stroke: currentColor; }
+.dark .bg-accent-soft svg,
+.dark .bg-blue-soft .text-blue,
+.dark .bg-sky-soft .text-sky,
+.dark .bg-mint-soft .text-present,
+.dark .bg-green-soft .text-present,
+.dark .bg-rose-soft .text-absent,
+.dark .bg-lavender-soft .text-lavender,
+.dark .bg-peach-soft .text-accent { color: #f2b95d !important; stroke: currentColor; }
+
+.dark .bg-blue-soft > div > div > svg,
+.dark .bg-sky-soft > div > div > svg,
+.dark .bg-mint-soft > div > div > svg,
+.dark .bg-green-soft > div > div > svg { color: #f2b95d !important; stroke: currentColor; }
 
 .dark .dark-datetime { color-scheme: dark; }
 .dark .dark-datetime::-webkit-calendar-picker-indicator { opacity: .85; }
