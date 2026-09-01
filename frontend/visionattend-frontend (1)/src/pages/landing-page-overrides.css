@@ -1,0 +1,34 @@
+/* Small, isolated fixes for the supplied landing page.
+   Keep these overrides scoped so portal pages are untouched. */
+.landing-page #about {
+  background: var(--gradient-brand);
+  color: var(--white);
+  overflow: hidden;
+}
+
+.landing-page #about .about-copy h2,
+.landing-page #about .about-card h3 {
+  color: var(--white);
+}
+
+.landing-page #about .about-copy p,
+.landing-page #about .about-card p {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.landing-page .contact-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--teal-600);
+  font-size: 0.92rem;
+  font-weight: 800;
+  word-break: break-word;
+}
+
+.landing-page .contact-email:hover {
+  color: var(--teal-800);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
