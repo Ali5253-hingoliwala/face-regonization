@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import "./landing-page.css";
+import "./landing-page-overrides.css";
 import template from "./landing-page-template.html?raw";
 
 export default function LandingPage() {
@@ -14,6 +15,16 @@ export default function LandingPage() {
     document.title = "VisionAttend — AI Face Recognition Attendance System";
     root.innerHTML = template;
 
+    const contactCard = root.querySelector<HTMLElement>("#contact .contact-card");
+    if (contactCard && !contactCard.querySelector(".contact-email")) {
+      const email = document.createElement("a");
+      email.className = "contact-email";
+      email.href = "mailto:aliasgarhingoliwala786@gmail.com";
+      email.textContent = "aliasgarhingoliwala786@gmail.com";
+      email.setAttribute("aria-label", "Email VisionAttend support");
+      contactCard.appendChild(email);
+    }
+
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const canHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     const cleanups: Array<() => void> = [];
@@ -21,7 +32,7 @@ export default function LandingPage() {
     const on = (
       element: HTMLElement | Document | Window,
       event: string,
-      handler: EventListenerOrEventListenerObject,
+      handler: EventListener | EventListenerObject,
       options?: boolean | AddEventListenerOptions,
     ) => {
       element.addEventListener(event, handler, options);
@@ -48,8 +59,6 @@ export default function LandingPage() {
       });
     });
 
-    // The supplied page contains demo auth controls. Keep its visual structure,
-    // but route every real auth action into the existing React/FastAPI flows.
     const go = (path: string) => navigate(path);
     const authClick = (event: Event) => {
       const target = event.target as HTMLElement | null;
