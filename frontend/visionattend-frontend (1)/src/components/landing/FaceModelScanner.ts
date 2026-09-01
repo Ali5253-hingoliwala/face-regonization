@@ -12,8 +12,7 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     };
   }
 
-  // The scanner is intentionally image-based now; keep the original canvas
-  // available in the DOM without letting it cover the portrait.
+  // Disable the old canvas/model while keeping the existing scanner surface.
   canvas.style.display = "none";
 
   const image = document.createElement("img");
@@ -23,7 +22,7 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
 
   Object.assign(image.style, {
     position: "absolute",
-    zIndex: "1",
+    zIndex: "2",
     left: "50%",
     bottom: "0",
     width: "62%",
@@ -38,17 +37,17 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
 
   frame.appendChild(image);
 
-  // Keep the original scanner UI above the portrait.
-  frame.querySelectorAll<HTMLElement>(".corner").forEach((el) => {
-    el.style.zIndex = "6";
-  });
-
+  // Scanner UI stays in front of the portrait.
   frame.querySelectorAll<HTMLElement>(".scan-line").forEach((el) => {
     el.style.zIndex = "7";
   });
 
   frame.querySelectorAll<HTMLElement>(".scan-label").forEach((el) => {
-    el.style.zIndex = "6";
+    el.style.zIndex = "8";
+  });
+
+  frame.querySelectorAll<HTMLElement>(".corner").forEach((el) => {
+    el.style.zIndex = "9";
   });
 
   frame.querySelectorAll<HTMLElement>(".status-chip").forEach((el) => {
@@ -59,8 +58,12 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     image.remove();
     canvas.style.display = "";
 
-    frame.querySelectorAll<HTMLElement>(".corner, .scan-line, .scan-label, .status-chip").forEach((el) => {
-      el.style.removeProperty("z-index");
-    });
+    frame
+      .querySelectorAll<HTMLElement>(
+        ".corner, .scan-line, .scan-label, .status-chip",
+      )
+      .forEach((el) => {
+        el.style.removeProperty("z-index");
+      });
   };
 }
