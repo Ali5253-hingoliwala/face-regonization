@@ -27,6 +27,7 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
   let disposed = false;
   let animationFrame = 0;
   const pointMaterials: THREE.PointsMaterial[] = [];
+  const lineMaterials: THREE.LineBasicMaterial[] = [];
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -84,6 +85,7 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
       const maxSize = Math.max(size.x, size.y, size.z) || 1;
       const scale = 2.25 / maxSize;
 
+      // ---- Face point cloud ----
       const positions = new Float32Array(faceVertices.length * 3);
       faceVertices.forEach((vertex, index) => {
         positions[index * 3] = (vertex.x - center.x) * scale;
@@ -115,6 +117,75 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
       points.renderOrder = 5;
       points.position.y = -0.01;
       root.add(points);
+
+      // ---- Biometric mesh lines ----
+      // Rebuild the original triangle edges so the dots are connected like
+      // a facial wire/scan mesh, while keeping the lines subtle.
+      source.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+
+        const edges = new THREE.EdgesGeometry(child.geometry, 1);
+        const edgePosition = edges.getAttribute("position");
+        if (!edgePosition) {
+          edges.dispose();
+          return;
+        }
+
+        const lineValues: number[] = [];
+        const a = new THREE.Vector3();
+        const b = new THREE.Vector3();
+
+        for (let i = 0; i + 1 < edgePosition.count; i += 2) {
+          a.set(
+            edgePosition.getX(i),
+            edgePosition.getY(i),
+            edgePosition.getZ(i),
+          ).applyMatrix4(child.matrixWorld);
+
+          b.set(
+            edgePosition.getX(i + 1),
+            edgePosition.getY(i + 1),
+            edgePosition.getZ(i + 1),
+          ).applyMatrix4(child.matrixWorld);
+
+          // Keep only edges belonging to the visible head region.
+          if (a.y < headMinY || b.y < headMinY) continue;
+
+          lineValues.push(
+            (a.x - center.x) * scale,
+            (a.y - center.y) * scale,
+            (a.z - center.z) * scale,
+            (b.x - center.x) * scale,
+            (b.y - center.y) * scale,
+            (b.z - center.z) * scale,
+          );
+        }
+
+        edges.dispose();
+
+        if (!lineValues.length) return;
+
+        const lineGeometry = new THREE.BufferGeometry();
+        lineGeometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(lineValues, 3),
+        );
+
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: 0x65c9c1,
+          transparent: true,
+          opacity: 0.28,
+          depthTest: false,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+
+        lineMaterials.push(lineMaterial);
+
+        const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+        lines.renderOrder = 4;
+        root.add(lines);
+      });
     },
     undefined,
     () => {
@@ -131,6 +202,10 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     pointMaterials.forEach((material) => {
       material.opacity = pulse;
       material.size = 0.014 + pulse * 0.002;
+    });
+
+    lineMaterials.forEach((material) => {
+      material.opacity = 0.20 + pulse * 0.08;
     });
 
     // Very subtle movement; no mouse tilt and no spinning.
@@ -152,7 +227,7 @@ export function mountFaceModelScanner(canvas: HTMLCanvasElement) {
     resizeObserver.disconnect();
 
     scene.traverse((object) => {
-      if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Points)) return;
+      if (!(object instanceof THREE.Mesh) && !(object instanceof THREE.Points) && !(object instanceof THREE.LineSegments)) return;
 
       object.geometry.dispose();
       const material = object.material;
