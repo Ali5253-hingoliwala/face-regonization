@@ -1,201 +1,44 @@
 /* Final landing-page polish. Scoped to .landing-page so portal UI remains untouched. */
 
-/* About: completed visual theme */
-.landing-page #about {
-  background: var(--gradient-brand);
-  color: var(--white);
-  overflow: hidden;
+.landing-page #about{background:var(--gradient-brand);color:var(--white);overflow:hidden;}
+.landing-page #about .about-copy h2,.landing-page #about .about-card h3{color:var(--white);}
+.landing-page #about .about-copy p,.landing-page #about .about-card p{color:rgba(255,255,255,.76);}
+
+/* Contact: three balanced cards */
+.landing-page #contact .contact-grid{grid-template-columns:repeat(3,minmax(0,1fr));max-width:1120px;gap:22px;}
+.landing-page #contact .contact-card{min-height:300px;display:flex;flex-direction:column;}
+.landing-page #contact .contact-card:nth-child(1) .contact-actions{align-items:center;gap:14px;margin-top:auto;padding-top:24px;}
+.landing-page #contact .contact-card:nth-child(2) .btn{margin-top:auto;align-self:flex-start;}
+.landing-page #contact .contact-card:nth-child(2) p{max-width:380px;}
+.landing-page #contact .contact-card:first-child .contact-email{display:none;}
+
+/* Third card: support / email */
+.landing-page #contact .contact-grid::after{content:"Support & feedback\\A\\AFor bugs, project issues, feedback, or questions about VisionAttend, send us an email and we’ll get back to you.\\A\\Aaliasgarhingoliwala786@gmail.com";white-space:pre-line;min-height:300px;padding:32px;border-radius:var(--radius-lg);background:var(--white);border:1px solid var(--mint-100);box-shadow:var(--shadow-sm);color:var(--teal-800);font-family:var(--font-body);font-size:.92rem;line-height:1.65;}
+
+/* Footer: separate Legal and Account */
+.landing-page .footer-grid{grid-template-columns:1.5fr .8fr 1.35fr;gap:50px;}
+.landing-page .footer-col:last-child{position:relative;}
+.landing-page .footer-col:last-child h5{font-size:0;position:relative;}
+.landing-page .footer-col:last-child h5::before{content:"LEGAL";font-size:.85rem;}
+.landing-page .footer-col:last-child h5::after{content:"ACCOUNT";position:absolute;left:52%;top:0;font-size:.85rem;}
+.landing-page .footer-col:last-child ul{display:grid;grid-template-columns:1fr 1fr;column-gap:34px;row-gap:11px;}
+.landing-page .footer-col:last-child li:nth-child(-n+5){grid-column:1;}
+.landing-page .footer-col:last-child li:nth-child(n+6){grid-column:2;}
+.landing-page .footer-col:last-child li:nth-child(6){grid-row:1;}
+.landing-page .footer-col:last-child li:nth-child(7){grid-row:2;}
+.landing-page .footer-col:last-child li:nth-child(8){grid-row:3;}
+.landing-page .footer-col:last-child li:nth-child(9){grid-row:4;}
+.landing-page .footer-bottom span:last-child{font-size:0;}
+.landing-page .footer-bottom span:last-child::after{content:"UI theme completed · Core platform connected";font-size:.85rem;}
+
+@media (max-width:1000px){
+  .landing-page #contact .contact-grid{grid-template-columns:1fr;}
+  .landing-page #contact .contact-grid::after{min-height:0;}
+  .landing-page .footer-grid{grid-template-columns:1fr 1fr;}
 }
-
-.landing-page #about .about-copy h2,
-.landing-page #about .about-card h3 {
-  color: var(--white);
-}
-
-.landing-page #about .about-copy p,
-.landing-page #about .about-card p {
-  color: rgba(255, 255, 255, 0.76);
-}
-
-/* Contact: cleaner three-card layout */
-.landing-page #contact .contact-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  max-width: 1120px;
-  gap: 22px;
-}
-
-.landing-page #contact .contact-card {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-}
-
-.landing-page #contact .contact-card:nth-child(1) .contact-actions {
-  align-items: center;
-  gap: 14px;
-  margin-top: auto;
-  padding-top: 24px;
-}
-
-.landing-page #contact .contact-card:nth-child(2) .btn {
-  margin-top: auto;
-  align-self: flex-start;
-}
-
-.landing-page #contact .contact-card:nth-child(2) p {
-  max-width: 380px;
-}
-
-/* The existing email link becomes the third support card's real clickable contact. */
-.landing-page #contact .contact-card:first-child {
-  position: relative;
-}
-
-.landing-page #contact .contact-card:first-child .contact-email {
-  position: absolute;
-  left: calc(200% + 44px);
-  bottom: 32px;
-  z-index: 3;
-  width: calc(100% - 64px);
-  margin: 0;
-  padding: 10px 0;
-  color: var(--teal-600);
-  font-size: 0.9rem;
-  font-weight: 800;
-  word-break: break-word;
-}
-
-.landing-page #contact .contact-card:first-child .contact-email::before {
-  content: "Email support";
-  display: block;
-  margin-bottom: 7px;
-  color: var(--navy-950);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.landing-page #contact .contact-card:first-child .contact-email:hover {
-  color: var(--teal-800);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Create the visual third card behind the real email link. */
-.landing-page #contact .contact-grid::after {
-  content: "Support & feedback\\A\\AFor bugs, project issues, feedback, or questions about VisionAttend, send us an email and we’ll get back to you.";
-  white-space: pre-line;
-  min-height: 300px;
-  padding: 32px;
-  border-radius: var(--radius-lg);
-  background: var(--white);
-  border: 1px solid var(--mint-100);
-  box-shadow: var(--shadow-sm);
-  color: var(--teal-800);
-  font-family: var(--font-body);
-  font-size: 0.92rem;
-  line-height: 1.65;
-}
-
-/* Footer: Legal and Account are now clearly separated. */
-.landing-page .footer-grid {
-  grid-template-columns: 1.5fr 0.8fr 1.35fr;
-  gap: 50px;
-}
-
-.landing-page .footer-col:last-child {
-  position: relative;
-}
-
-.landing-page .footer-col:last-child h5 {
-  font-size: 0;
-  position: relative;
-}
-
-.landing-page .footer-col:last-child h5::before {
-  content: "LEGAL";
-  font-size: 0.85rem;
-}
-
-.landing-page .footer-col:last-child h5::after {
-  content: "ACCOUNT";
-  position: absolute;
-  left: 52%;
-  top: 0;
-  font-size: 0.85rem;
-}
-
-.landing-page .footer-col:last-child ul {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  column-gap: 34px;
-  row-gap: 11px;
-}
-
-.landing-page .footer-col:last-child li:nth-child(-n + 5) {
-  grid-column: 1;
-}
-
-.landing-page .footer-col:last-child li:nth-child(n + 6) {
-  grid-column: 2;
-}
-
-.landing-page .footer-col:last-child li:nth-child(6) { grid-row: 1; }
-.landing-page .footer-col:last-child li:nth-child(7) { grid-row: 2; }
-.landing-page .footer-col:last-child li:nth-child(8) { grid-row: 3; }
-.landing-page .footer-col:last-child li:nth-child(9) { grid-row: 4; }
-
-/* The theme is finished now, so don't show the old progress wording. */
-.landing-page .footer-bottom span:last-child {
-  font-size: 0;
-}
-
-.landing-page .footer-bottom span:last-child::after {
-  content: "UI theme completed · Core platform connected";
-  font-size: 0.85rem;
-}
-
-@media (max-width: 1000px) {
-  .landing-page #contact .contact-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .landing-page #contact .contact-grid::after {
-    min-height: 0;
-  }
-
-  .landing-page #contact .contact-card:first-child .contact-email {
-    position: static;
-    width: auto;
-    margin-top: 14px;
-    padding: 0;
-  }
-
-  .landing-page #contact .contact-card:first-child .contact-email::before {
-    display: none;
-  }
-
-  .landing-page .footer-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 680px) {
-  .landing-page .footer-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .landing-page .footer-col:last-child ul {
-    grid-template-columns: 1fr;
-  }
-
-  .landing-page .footer-col:last-child li:nth-child(n) {
-    grid-column: 1;
-    grid-row: auto;
-  }
-
-  .landing-page .footer-col:last-child h5::after {
-    left: auto;
-    right: 0;
-  }
+@media (max-width:680px){
+  .landing-page .footer-grid{grid-template-columns:1fr;}
+  .landing-page .footer-col:last-child ul{grid-template-columns:1fr;}
+  .landing-page .footer-col:last-child li:nth-child(n){grid-column:1;grid-row:auto;}
+  .landing-page .footer-col:last-child h5::after{left:auto;right:0;}
 }
