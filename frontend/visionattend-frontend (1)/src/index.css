@@ -44,6 +44,17 @@ input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opaci
 
 @media (max-width: 1023px) { .portal-active main { width: 100% !important; margin-left: 0 !important; } }
 
+/* High-contrast stat/card icons used across the admin and student portals. */
+.bg-white\\/70,
+.bg-white\\/65 { background-color: rgba(15, 23, 42, 0.22) !important; }
+
+.bg-white\\/70 svg,
+.bg-white\\/65 svg {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+  stroke-width: 2.5 !important;
+}
+
 .dark {
   --color-bg: #0b1220;
   --color-panel: #111a2b;
@@ -79,7 +90,7 @@ input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opaci
 .dark .text-green-700 { color: #65c7a5 !important; }
 .dark .text-red-600 { color: #ff8b8b !important; }
 
-/* Keep semantic pastel cards, but make their icons readable in dark mode. */
+/* Keep semantic pastel cards readable in dark mode. */
 .dark .bg-blue-soft svg,
 .dark .bg-sky-soft svg,
 .dark .bg-mint-soft svg,
@@ -94,12 +105,12 @@ input::placeholder, textarea::placeholder { color: var(--color-ink-faint); opaci
 .dark .bg-green-soft .text-present,
 .dark .bg-rose-soft .text-absent,
 .dark .bg-lavender-soft .text-lavender,
-.dark .bg-peach-soft .text-accent { color: #f2b95d !important; stroke: currentColor; }
+.dark .bg-peach-soft .text-accent { color: #ffffff !important; stroke: currentColor; }
 
 .dark .bg-blue-soft > div > div > svg,
 .dark .bg-sky-soft > div > div > svg,
 .dark .bg-mint-soft > div > div > svg,
-.dark .bg-green-soft > div > div > svg { color: #f2b95d !important; stroke: currentColor; }
+.dark .bg-green-soft > div > div > svg { color: #ffffff !important; stroke: currentColor; }
 
 .dark .dark-datetime { color-scheme: dark; }
 .dark .dark-datetime::-webkit-calendar-picker-indicator { opacity: .85; }
