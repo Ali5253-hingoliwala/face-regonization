@@ -4,6 +4,33 @@
 .landing-page #about .about-copy h2,.landing-page #about .about-card h3{color:var(--white);}
 .landing-page #about .about-copy p,.landing-page #about .about-card p{color:rgba(255,255,255,.76);}
 
+/* Real 3D scanner: stable frame, no mouse tilt. */
+.landing-page #scan-frame{transform:none!important;transform-style:flat;}
+.landing-page #scan-frame #face-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.landing-page #scan-frame .scan-line{z-index:5;pointer-events:none;}
+.landing-page #scan-frame .corner,.landing-page #scan-frame .scan-label{z-index:6;}
+
+/* About card: replace the repetitive progress/status copy with a clearer product summary. */
+.landing-page #about .about-card-top .status-pill{font-size:0;}
+.landing-page #about .about-card-top .status-pill::after{content:"SYSTEM CONNECTED";font-size:.7rem;}
+.landing-page #about .about-card h3{font-size:1.65rem;}
+.landing-page #about .about-card > p{font-size:.92rem;line-height:1.7;}
+.landing-page #about .about-card > p{font-size:0;}
+.landing-page #about .about-card > p::after{content:"Recognition, liveness verification, scheduled sessions and attendance records work together in one connected workflow — with separate experiences for admins and students.";font-size:.92rem;line-height:1.7;display:block;}
+.landing-page #about .about-card .progress-wrap{margin-top:25px;}
+.landing-page #about .about-card .progress-meta span{font-size:0;}
+.landing-page #about .about-card .progress-meta span::after{content:"AI ATTENDANCE WORKFLOW";font-size:.7rem;}
+.landing-page #about .about-card .progress-meta strong{font-size:0;}
+.landing-page #about .about-card .progress-meta strong::after{content:"CONNECTED";font-size:.7rem;}
+.landing-page #about .about-card .progress{background:rgba(255,255,255,.16);}
+.landing-page #about .about-card .progress span{width:100%;}
+.landing-page #about .about-card .about-points{display:grid;gap:12px;margin-top:24px;}
+.landing-page #about .about-card .about-points div{font-size:.86rem;}
+.landing-page #about .about-card .about-points div:nth-child(1){font-size:0;}
+.landing-page #about .about-card .about-points div:nth-child(1)::after{content:"Face recognition + liveness verification";font-size:.86rem;}
+.landing-page #about .about-card .about-points div:nth-child(2){font-size:0;}
+.landing-page #about .about-card .about-points div:nth-child(2)::after{content:"Session-based attendance + analytics";font-size:.86rem;}
+
 /* Contact: balanced three-card layout with real semantic content. */
 .landing-page #contact .contact-grid{grid-template-columns:repeat(3,minmax(0,1fr));max-width:1120px;gap:22px;}
 .landing-page #contact .contact-card{min-height:300px;display:flex;flex-direction:column;}
