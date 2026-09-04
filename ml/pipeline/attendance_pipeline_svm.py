@@ -47,7 +47,6 @@ from svm_recognizer import SVMFaceClassifier
 
 SVM_CONFIDENCE_THRESHOLD = 0.70
 DETECTION_INTERVAL = 2
-RECOGNITION_INTERVAL = 5
 WINDOW_NAME = "VisionAttend AI - SVM Attendance"
 SPOOF_WARNING_SECONDS = 3.0
 
@@ -66,28 +65,64 @@ def clamp_bbox(bbox, width, height):
     return x1, y1, x2, y2
 
 
-def match_yolo_to_insightface(yolo_bbox, insight_faces):
-    """Match a YOLO detection to its InsightFace result by bbox center."""
+def match_yolo_to_insightface(yolo_bbox, insight_faces, used_faces=None):
+    """Match one YOLO detection to one unique InsightFace result."""
+    used_faces = used_faces if used_faces is not None else set()
     x1, y1, x2, y2 = yolo_bbox
     center_x = (x1 + x2) / 2.0
     center_y = (y1 + y2) / 2.0
 
-    best_face = None
-    best_distance = float("inf")
+    candidates = []
+    for index, face in enumerate(insight_faces):
+        if index in used_faces:
+            continue
 
-    for face in insight_faces:
         rx1, ry1, rx2, ry2 = map(float, face.bbox)
         if rx1 <= center_x <= rx2 and ry1 <= center_y <= ry2:
-            return face
+            candidates.append((index, face))
 
-        r_center_x = (rx1 + rx2) / 2.0
-        r_center_y = (ry1 + ry2) / 2.0
-        distance = (r_center_x - center_x) ** 2 + (r_center_y - center_y) ** 2
-        if distance < best_distance:
-            best_distance = distance
-            best_face = face
+    if not candidates:
+        return None
 
-    return best_face
+    # Prefer the smallest containing InsightFace box, matching the standalone
+    # multi-face test and avoiding one large face being reused for another.
+    return min(candidates, key=lambda item: bbox_area(item[1].bbox))
+
+
+def classify_detection(detection, insight_faces, used_faces, svm, database):
+    """Classify one YOLO detection and return its display/attendance payload."""
+    bbox = detection["bbox"]
+    matched = match_yolo_to_insightface(bbox, insight_faces, used_faces)
+    if matched is None:
+        return {"bbox": bbox, "match": None}
+
+    insight_index, insight_face = matched
+    used_faces.add(insight_index)
+
+    prediction = svm.predict(insight_face.embedding)
+    if prediction is None:
+        return {"bbox": bbox, "match": None}
+
+    confidence = prediction["confidence"]
+    student_id = prediction["student_id"]
+    person = database.get(student_id)
+
+    # SVM probability is the identity acceptance gate. Unknown/low-confidence
+    # predictions stay UNKNOWN instead of being sent to liveness/attendance.
+    if person is None or (
+        confidence is not None and confidence < SVM_CONFIDENCE_THRESHOLD
+    ):
+        return {"bbox": bbox, "match": None, "svm_prediction": prediction}
+
+    return {
+        "bbox": bbox,
+        "match": {
+            "student_id": student_id,
+            "name": person["name"],
+            "confidence": confidence,
+            "embedding": insight_face.embedding,
+        },
+    }
 
 
 def close_session_and_mark_absentees(session_manager, attendance, face_db, session):
@@ -159,9 +194,6 @@ def main():
     session_attendance_cache = attendance.get_by_session(session_id)
     print(f"Existing attendance in this session: {len(session_attendance_cache)}")
 
-    # One liveness state per student. Each signal processor receives a crop
-    # containing only that student's face, which keeps the existing MediaPipe
-    # num_faces=1 configuration safe for multi-face classroom frames.
     liveness_controllers = {}
     liveness_signals = {}
 
@@ -201,31 +233,19 @@ def main():
             if frame_count % DETECTION_INTERVAL == 0 or not cached_results:
                 detections = detector.detect(frame)
                 insight_faces = recognizer.get_faces(frame) if detections else []
+                used_faces = set()
                 new_results = []
 
                 for detection in detections:
-                    bbox = detection["bbox"]
-                    insight_face = match_yolo_to_insightface(bbox, insight_faces)
-                    match = None
-
-                    if insight_face is not None:
-                        prediction = svm.predict(insight_face.embedding)
-                        if prediction is not None:
-                            confidence = prediction["confidence"]
-                            student_id = prediction["student_id"]
-                            person = database.get(student_id)
-
-                            if person is not None and (
-                                confidence is None or confidence >= SVM_CONFIDENCE_THRESHOLD
-                            ):
-                                match = {
-                                    "student_id": student_id,
-                                    "name": person["name"],
-                                    "confidence": confidence,
-                                    "embedding": insight_face.embedding,
-                                }
-
-                    new_results.append({"bbox": bbox, "match": match})
+                    new_results.append(
+                        classify_detection(
+                            detection,
+                            insight_faces,
+                            used_faces,
+                            svm,
+                            database,
+                        )
+                    )
 
                 cached_results = new_results
 
@@ -301,7 +321,6 @@ def main():
                             session_attendance_cache[student_id] = attendance_result["record"]
                             liveness_controllers[student_id].reset()
 
-            # Release liveness resources for students no longer visible.
             for student_id in list(liveness_signals):
                 if student_id not in recognized_ids:
                     liveness_signals[student_id].close()
