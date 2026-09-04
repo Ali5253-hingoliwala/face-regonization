@@ -24,6 +24,19 @@ RECOGNITION_DIR = PROJECT_ROOT / "ml" / "recognition"
 ANTI_SPOOFING_DIR = PROJECT_ROOT / "ml" / "anti_spoofing"
 ATTENDANCE_DIR = PROJECT_ROOT / "ml" / "attendance"
 CLASSIFICATION_DIR = PROJECT_ROOT / "ml" / "classification"
+LOG_DIR = PROJECT_ROOT / "ml" / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "svm_pipeline.log"
+
+# The admin portal launches this process separately from the frontend.
+# Redirect stdout/stderr so startup failures and tracebacks are preserved even
+# when the backend is started without a visible terminal.
+_log_handle = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+sys.stdout = _log_handle
+sys.stderr = _log_handle
+print("\n" + "=" * 64)
+print(f"SVM pipeline process started: {datetime.now().isoformat()}")
+print("=" * 64)
 
 for folder in (
     DETECTION_DIR,
@@ -425,6 +438,7 @@ def main():
                 session_manager, attendance, face_db, current_session
             )
         print("\nVisionAttend AI SVM attendance stopped.")
+        _log_handle.flush()
 
 
 if __name__ == "__main__":
