@@ -1,69 +1,239 @@
 import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Hash, Lock, ScanFace, UserRound, Camera, Eye, EyeOff, Home, Mail } from "lucide-react";
+import { ArrowRight, CheckCircle2, Hash, Lock, ScanFace, UserRound, Camera, Eye, EyeOff, Home, Mail, RotateCcw } from "lucide-react";
 import ViewfinderFrame from "../components/ViewfinderFrame";
 import Logo from "../components/Logo";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import { useAuth } from "../context/AuthContext";
 
 const genders = ["male", "female", "prefer not to say"];
+const POSES = [
+  "LOOK STRAIGHT",
+  "TURN SLIGHTLY LEFT",
+  "TURN SLIGHTLY RIGHT",
+  "LOOK SLIGHTLY UP",
+  "LOOK SLIGHTLY DOWN",
+  "LEFT + BLINK",
+  "RIGHT + BLINK",
+  "STRAIGHT + BLINK",
+  "SLIGHT LEFT + LOOK CENTER",
+  "SLIGHT RIGHT + LOOK CENTER",
+];
 
 export default function SignupPage() {
   const [searchParams] = useSearchParams();
   const googleMode = searchParams.get("mode") === "google";
-  const [studentId, setStudentId] = useState(""); const [username, setUsername] = useState(""); const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [gender, setGender] = useState(""); const [password, setPassword] = useState(""); const [confirmPassword, setConfirmPassword] = useState(""); const [faceImage, setFaceImage] = useState(""); const [cameraOpen, setCameraOpen] = useState(false); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false); const [success, setSuccess] = useState(false); const [showPassword, setShowPassword] = useState(false); const [showConfirm, setShowConfirm] = useState(false);
+  const [studentId, setStudentId] = useState("");
+  const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [gender, setGender] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [faceImages, setFaceImages] = useState<string[]>([]);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [enrolling, setEnrolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [googleCredential, setGoogleCredential] = useState("");
-  const videoRef = useRef<HTMLVideoElement | null>(null); const streamRef = useRef<MediaStream | null>(null);
-  const { signup, googleLogin, googleOnboard } = useAuth(); const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const { signup, googleLogin, googleOnboard } = useAuth();
+  const navigate = useNavigate();
+
+  const poseIndex = faceImages.length;
+  const faceRegistrationComplete = faceImages.length === POSES.length;
 
   useEffect(() => {
-    if (googleMode) { setGoogleCredential(sessionStorage.getItem("va_google_credential") || ""); setEmail(sessionStorage.getItem("va_google_email") || ""); setName(sessionStorage.getItem("va_google_name") || ""); }
+    if (googleMode) {
+      setGoogleCredential(sessionStorage.getItem("va_google_credential") || "");
+      setEmail(sessionStorage.getItem("va_google_email") || "");
+      setName(sessionStorage.getItem("va_google_name") || "");
+    }
   }, [googleMode]);
 
-  async function openCamera() { setError(null); try { const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false }); streamRef.current = stream; setCameraOpen(true); requestAnimationFrame(() => { if (videoRef.current) videoRef.current.srcObject = stream; }); } catch { setError("Camera permission was denied or the camera is unavailable."); } }
-  function closeCamera() { streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null; setCameraOpen(false); }
-  function captureFace() { const video = videoRef.current; if (!video || video.readyState < 2) { setError("Camera is not ready yet."); return; } const canvas = document.createElement("canvas"); canvas.width = video.videoWidth; canvas.height = video.videoHeight; canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height); setFaceImage(canvas.toDataURL("image/jpeg", 0.88)); closeCamera(); }
-  useEffect(() => () => closeCamera(), []);
+  useEffect(() => () => stopCamera(), []);
 
-  async function handleGoogleStart(credential: string) { setError(null); setLoading(true); try { const result = await googleLogin(credential); if (!result.onboardingRequired) { navigate(result.role === "admin" ? "/admin" : "/student"); return; } sessionStorage.setItem("va_google_credential", credential); sessionStorage.setItem("va_google_email", result.email ?? ""); sessionStorage.setItem("va_google_name", result.suggestedName ?? ""); setGoogleCredential(credential); setEmail(result.email ?? ""); setName(result.suggestedName ?? ""); } catch (err: any) { setError(err?.response?.data?.detail ?? "Google Sign-Up failed. Please try again."); } finally { setLoading(false); } }
+  function stopCamera() {
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    setCameraOpen(false);
+    setEnrolling(false);
+  }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault(); setError(null);
+  async function openCamera() {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      streamRef.current = stream;
+      setCameraOpen(true);
+      setEnrolling(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play().catch(() => undefined);
+        }
+      });
+    } catch {
+      setError("Camera permission was denied or the camera is unavailable.");
+    }
+  }
+
+  function capturePose() {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || !video.videoWidth) {
+      setError("Camera is not ready yet.");
+      return;
+    }
+    if (faceImages.length >= POSES.length) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image = canvas.toDataURL("image/jpeg", 0.78);
+    const next = [...faceImages, image];
+    setFaceImages(next);
+    setError(null);
+
+    if (next.length === POSES.length) {
+      stopCamera();
+    }
+  }
+
+  function resetFaceEnrollment() {
+    setFaceImages([]);
+    setError(null);
+    if (!cameraOpen) void openCamera();
+  }
+
+  async function handleGoogleStart(credential: string) {
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await googleLogin(credential);
+      if (!result.onboardingRequired) {
+        navigate(result.role === "admin" ? "/admin" : "/student");
+        return;
+      }
+      sessionStorage.setItem("va_google_credential", credential);
+      sessionStorage.setItem("va_google_email", result.email ?? "");
+      sessionStorage.setItem("va_google_name", result.suggestedName ?? "");
+      setGoogleCredential(credential);
+      setEmail(result.email ?? "");
+      setName(result.suggestedName ?? "");
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? "Google Sign-Up failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
     if (!studentId.trim()) { setError("Student ID is required."); return; }
     if (!name.trim()) { setError("Full name is required."); return; }
     if (!email.trim()) { setError("Email is required."); return; }
     if (!gender) { setError("Please select your gender."); return; }
-    if (!faceImage) { setError("Capture your face before creating the account."); return; }
+    if (!faceRegistrationComplete) { setError("Complete all 10 guided face poses before creating the account."); return; }
     if (password !== confirmPassword) { setError("Passwords don't match."); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+
     setLoading(true);
     try {
+      const faceData = { faceImages };
       if (googleMode) {
         if (!googleCredential) { setError("Your Google session expired. Please start Google Sign-Up again."); return; }
-        const role = await googleOnboard(googleCredential, { username: username.trim(), studentId: studentId.trim(), password, gender, faceImage });
-        sessionStorage.removeItem("va_google_credential"); sessionStorage.removeItem("va_google_email"); sessionStorage.removeItem("va_google_name"); navigate(role === "admin" ? "/admin" : "/student");
+        const role = await googleOnboard(googleCredential, { username: username.trim(), studentId: studentId.trim(), password, gender, faceData });
+        sessionStorage.removeItem("va_google_credential");
+        sessionStorage.removeItem("va_google_email");
+        sessionStorage.removeItem("va_google_name");
+        navigate(role === "admin" ? "/admin" : "/student");
       } else {
-        await signup(studentId.trim(), name.trim(), password, faceImage, email.trim().toLowerCase(), gender); setSuccess(true); setTimeout(() => navigate("/login"), 1500);
+        await signup(studentId.trim(), name.trim(), password, faceData, email.trim().toLowerCase(), gender);
+        setSuccess(true);
+        setTimeout(() => navigate("/login"), 1500);
       }
-    } catch (err: any) { setError(err?.response?.data?.detail ?? "Registration failed. Please try again."); }
-    finally { setLoading(false); }
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const title = googleMode ? "Finish your Google signup" : "Create your account";
-  const subtitle = googleMode ? "Add your student details, password, gender and face registration." : "Register your student details, email, gender and face.";
+  const subtitle = googleMode ? "Add your student details, password, gender and complete your face enrollment." : "Register your student details, email, gender and a secure 10-pose face profile.";
 
-  return <div className="min-h-screen bg-bg flex"><div className="hidden lg:flex lg:w-[45%] relative overflow-hidden bg-panel-dark items-center justify-center"><div className="relative z-10 flex flex-col items-center px-10 text-center"><ViewfinderFrame active cornerSize={22} className="relative mb-8 w-56 h-56 overflow-hidden rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-center justify-center"><img src="/images/images.jpg" alt="Face recognition" className="absolute inset-0 h-full w-full object-cover opacity-90"/><div className="absolute inset-0 bg-panel-dark/20"/><div className="absolute left-4 right-4 top-1/2 h-px bg-accent-glow/80 shadow-[0_0_12px_rgba(217,154,76,0.9)] animate-scan"/><ScanFace className="relative z-10 text-white/80" size={36} strokeWidth={1.2}/></ViewfinderFrame><h2 className="font-display text-2xl font-semibold text-white mb-3">One face, one record</h2><p className="text-white/60 text-sm leading-relaxed max-w-xs">Your face embedding is securely generated by the same VisionAttend recognition system used during attendance.</p></div></div><div className="flex-1 flex items-center justify-center px-6 py-10"><div className="w-full max-w-sm"><div className="mb-8 flex items-center justify-between"><Link to="/"><Logo size={26}/></Link><Link to="/" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-ink-muted hover:bg-panel-hover"><Home size={15}/> Back to Home</Link></div><h1 className="font-display text-2xl font-semibold mb-1">{title}</h1><p className="text-sm text-ink-muted mb-7">{subtitle}</p>{success ? <div className="flex flex-col items-center py-10 text-center"><CheckCircle2 className="text-present mb-3" size={36}/><p className="text-sm text-ink-muted">Account and face registered. Taking you to login...</p></div> : <>
-    {!googleMode && <div className="space-y-3 mb-5"><GoogleSignInButton onCredential={handleGoogleStart} disabled={loading} text="signup_with"/><div className="flex items-center gap-3"><div className="h-px flex-1 bg-line"/><span className="text-[11px] uppercase tracking-wider text-ink-faint">or create with student details</span><div className="h-px flex-1 bg-line"/></div></div>}
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {googleMode && <div className="rounded-xl border border-line bg-panel px-3 py-3"><div className="flex items-center gap-2 text-xs text-ink-muted"><Mail size={15}/> Google email</div><p className="mt-1 text-sm font-medium text-ink">{email || "Verified Google account"}</p></div>}
-      <Field icon={<Hash size={16}/>} label="Student ID" value={studentId} onChange={setStudentId} placeholder="e.g. CW003"/>
-      {googleMode ? <Field icon={<UserRound size={16}/>} label="Username" value={username} onChange={setUsername} placeholder="Choose a username"/> : <Field icon={<UserRound size={16}/>} label="Full name" value={name} onChange={setName} placeholder="e.g. Ali Khan"/>}
-      {!googleMode && <Field icon={<Mail size={16}/>} label="Email" type="email" value={email} onChange={setEmail} placeholder="e.g. student@gmail.com"/>}
-      <div><label className="block text-xs font-mono text-ink-muted mb-1.5">Gender</label><select value={gender} onChange={e=>setGender(e.target.value)} required className="w-full bg-white border border-line rounded-lg px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"><option value="">Select gender</option>{genders.map(value=><option key={value} value={value}>{value === "prefer not to say" ? "Prefer not to say" : value[0].toUpperCase()+value.slice(1)}</option>)}</select></div>
-      <div><label className="block text-xs font-mono text-ink-muted mb-1.5">Face registration</label>{faceImage ? <div className="rounded-xl border border-green-200 bg-green-50 p-3"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm text-green-700"><CheckCircle2 size={17}/> Face captured</div><button type="button" onClick={() => setFaceImage("")} className="text-xs text-green-700 hover:underline">Retake</button></div></div> : <button type="button" onClick={openCamera} className="w-full flex items-center justify-center gap-2 rounded-xl border border-line bg-white py-3 text-sm font-medium hover:border-accent hover:text-accent"><Camera size={17}/> Open camera & capture face</button>}</div>
-      {cameraOpen && <div className="rounded-2xl border border-line bg-black p-2"><video ref={videoRef} autoPlay playsInline muted className="aspect-video w-full rounded-xl object-cover"/><div className="flex gap-2 pt-2"><button type="button" onClick={captureFace} className="flex-1 rounded-xl bg-accent py-2.5 text-sm font-medium text-white"><Camera size={16} className="mr-2 inline"/>Capture</button><button type="button" onClick={closeCamera} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm">Close</button></div></div>}
-      <PasswordField label="Password" value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword(v=>!v)}/><PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} show={showConfirm} onToggle={() => setShowConfirm(v=>!v)}/>{error && <p className="text-sm text-absent bg-absent/5 border border-absent/20 rounded-lg px-3 py-2">{error}</p>}<button type="submit" disabled={loading || cameraOpen} className="w-full flex items-center justify-center gap-2 bg-accent text-white font-medium py-2.5 rounded-lg shadow-sm hover:bg-accent-dim transition-all disabled:opacity-60">{loading ? (googleMode ? "Creating account..." : "Registering face...") : (googleMode ? "Complete Google signup" : "Create account")}{!loading && <ArrowRight size={16}/>}</button>
-    </form></>}{!success && <p className="text-sm text-ink-muted mt-8 text-center">Already have an account? <Link to="/login" className="text-accent font-medium hover:underline">Log in</Link></p>}</div></div></div>;
+  return <div className="min-h-screen bg-bg flex">
+    <div className="hidden lg:flex lg:w-[45%] relative overflow-hidden bg-panel-dark items-center justify-center">
+      <div className="relative z-10 flex flex-col items-center px-10 text-center">
+        <ViewfinderFrame active cornerSize={22} className="relative mb-8 w-56 h-56 overflow-hidden rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-center justify-center">
+          <img src="/images/images.jpg" alt="Face recognition" className="absolute inset-0 h-full w-full object-cover opacity-90"/>
+          <div className="absolute inset-0 bg-panel-dark/20"/>
+          <div className="absolute left-4 right-4 top-1/2 h-px bg-accent-glow/80 shadow-[0_0_12px_rgba(217,154,76,0.9)] animate-scan"/>
+          <ScanFace className="relative z-10 text-white/80" size={36} strokeWidth={1.2}/>
+        </ViewfinderFrame>
+        <h2 className="font-display text-2xl font-semibold text-white mb-3">Build a stronger face profile</h2>
+        <p className="text-white/60 text-sm leading-relaxed max-w-xs">Ten varied face samples help the SVM recognition model learn your identity more reliably while the original recognition system remains intact.</p>
+      </div>
+    </div>
+
+    <div className="flex-1 flex items-center justify-center px-6 py-10">
+      <div className="w-full max-w-md">
+        <div className="mb-8 flex items-center justify-between"><Link to="/"><Logo size={26}/></Link><Link to="/" className="inline-flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs text-ink-muted hover:bg-panel-hover"><Home size={15}/> Back to Home</Link></div>
+        <h1 className="font-display text-2xl font-semibold mb-1">{title}</h1>
+        <p className="text-sm text-ink-muted mb-7">{subtitle}</p>
+
+        {success ? <div className="flex flex-col items-center py-10 text-center"><CheckCircle2 className="text-present mb-3" size={36}/><p className="text-sm text-ink-muted">Account and face profile registered. Taking you to login...</p></div> : <>
+          {!googleMode && <div className="space-y-3 mb-5"><GoogleSignInButton onCredential={handleGoogleStart} disabled={loading} text="signup_with"/><div className="flex items-center gap-3"><div className="h-px flex-1 bg-line"/><span className="text-[11px] uppercase tracking-wider text-ink-faint">or create with student details</span><div className="h-px flex-1 bg-line"/></div></div>}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {googleMode && <div className="rounded-xl border border-line bg-panel px-3 py-3"><div className="flex items-center gap-2 text-xs text-ink-muted"><Mail size={15}/> Google email</div><p className="mt-1 text-sm font-medium text-ink">{email || "Verified Google account"}</p></div>}
+            <Field icon={<Hash size={16}/>} label="Student ID" value={studentId} onChange={setStudentId} placeholder="e.g. CW003"/>
+            {googleMode ? <Field icon={<UserRound size={16}/>} label="Username" value={username} onChange={setUsername} placeholder="Choose a username"/> : <Field icon={<UserRound size={16}/>} label="Full name" value={name} onChange={setName} placeholder="e.g. Ali Khan"/>}
+            {!googleMode && <Field icon={<Mail size={16}/>} label="Email" type="email" value={email} onChange={setEmail} placeholder="e.g. student@gmail.com"/>}
+            <div><label className="block text-xs font-mono text-ink-muted mb-1.5">Gender</label><select value={gender} onChange={e=>setGender(e.target.value)} required className="w-full bg-white border border-line rounded-lg px-3 py-2.5 text-sm shadow-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"><option value="">Select gender</option>{genders.map(value=><option key={value} value={value}>{value === "prefer not to say" ? "Prefer not to say" : value[0].toUpperCase()+value.slice(1)}</option>)}</select></div>
+
+            <div className="rounded-2xl border border-line bg-panel p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div><label className="block text-xs font-mono text-ink-muted">Face enrollment</label><p className="text-sm font-medium text-ink mt-1">{faceRegistrationComplete ? "10 samples captured" : `Pose ${poseIndex + 1} of ${POSES.length}`}</p></div>
+                <div className="text-xs font-mono text-ink-muted">{faceImages.length}/{POSES.length}</div>
+              </div>
+              <div className="h-2 rounded-full bg-line overflow-hidden"><div className="h-full bg-accent transition-all duration-300" style={{ width: `${(faceImages.length / POSES.length) * 100}%` }}/></div>
+
+              {cameraOpen ? <div className="space-y-3">
+                <div className="relative overflow-hidden rounded-xl bg-black border border-line">
+                  <video ref={videoRef} autoPlay playsInline muted className="aspect-video w-full object-cover"/>
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center"><div className="h-[68%] w-[45%] rounded-[45%] border-2 border-white/50"/></div>
+                  <div className="absolute left-3 right-3 top-3 rounded-xl bg-black/70 px-3 py-2 text-center backdrop-blur-sm">
+                    <p className="text-[10px] uppercase tracking-widest text-white/60">Next capture</p>
+                    <p className="text-sm font-semibold text-white mt-0.5">{POSES[poseIndex]}</p>
+                  </div>
+                  <div className="absolute bottom-3 left-3 right-3 text-center"><span className="inline-flex rounded-full bg-black/65 px-3 py-1 text-[11px] text-white/80">Keep exactly one face visible</span></div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={capturePose} disabled={loading || faceRegistrationComplete} className="flex-1 rounded-xl bg-accent py-2.5 text-sm font-medium text-white hover:bg-accent-dim disabled:opacity-50"><Camera size={16} className="mr-2 inline"/>Capture {faceImages.length + 1}/10</button>
+                  <button type="button" onClick={stopCamera} className="rounded-xl border border-line bg-white px-4 py-2.5 text-sm">Close</button>
+                </div>
+                <p className="text-center text-xs text-ink-muted">After each capture, the next pose appears automatically.</p>
+              </div> : faceRegistrationComplete ? <div className="rounded-xl border border-green-200 bg-green-50 p-3"><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm text-green-700"><CheckCircle2 size={17}/> 10 diverse face samples ready</div><button type="button" onClick={resetFaceEnrollment} className="inline-flex items-center gap-1 text-xs text-green-700 hover:underline"><RotateCcw size={13}/> Retake all</button></div></div> : <div className="space-y-3"><div className="rounded-xl bg-white border border-line p-3"><p className="text-xs uppercase tracking-wider text-ink-faint">Your first pose</p><p className="text-base font-semibold text-ink mt-1">{POSES[poseIndex]}</p><p className="text-xs text-ink-muted mt-1">Follow the instruction, then press Capture. The next pose will be shown immediately.</p></div><button type="button" onClick={openCamera} className="w-full flex items-center justify-center gap-2 rounded-xl border border-line bg-white py-3 text-sm font-medium hover:border-accent hover:text-accent"><Camera size={17}/> Start 10-pose face enrollment</button></div>}
+            </div>
+
+            <PasswordField label="Password" value={password} onChange={setPassword} show={showPassword} onToggle={() => setShowPassword(v=>!v)}/><PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} show={showConfirm} onToggle={() => setShowConfirm(v=>!v)}/>
+            {error && <p className="text-sm text-absent bg-absent/5 border border-absent/20 rounded-lg px-3 py-2">{error}</p>}
+            <button type="submit" disabled={loading || cameraOpen || !faceRegistrationComplete} className="w-full flex items-center justify-center gap-2 bg-accent text-white font-medium py-2.5 rounded-lg shadow-sm hover:bg-accent-dim transition-all disabled:opacity-60">{loading ? (googleMode ? "Creating account..." : "Registering face profile...") : (googleMode ? "Complete Google signup" : "Create account")}{!loading && <ArrowRight size={16}/>}</button>
+          </form>
+        </>}
+        {!success && <p className="text-sm text-ink-muted mt-8 text-center">Already have an account? <Link to="/login" className="text-accent font-medium hover:underline">Log in</Link></p>}
+      </div>
+    </div>
+  </div>;
 }
+
 function Field({ icon, label, value, onChange, placeholder, type = "text" }: { icon: React.ReactNode; label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) { return <div><label className="block text-xs font-mono text-ink-muted mb-1.5">{label}</label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint">{icon}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)} required placeholder={placeholder} className="w-full bg-white border border-line rounded-lg pl-9 pr-3 py-2.5 text-sm shadow-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"/></div></div>; }
 function PasswordField({ label, value, onChange, show, onToggle }: { label: string; value: string; onChange: (value: string) => void; show: boolean; onToggle: () => void }) { return <div><label className="block text-xs font-mono text-ink-muted mb-1.5">{label}</label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" size={16}/><input type={show?"text":"password"} value={value} onChange={e=>onChange(e.target.value)} required className="w-full bg-white border border-line rounded-lg pl-9 pr-11 py-2.5 text-sm shadow-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft"/><button type="button" onClick={onToggle} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-ink-faint hover:text-ink">{show?<EyeOff size={16}/>:<Eye size={16}/>}</button></div></div>; }

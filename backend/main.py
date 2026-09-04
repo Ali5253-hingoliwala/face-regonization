@@ -62,6 +62,20 @@ def _capture_embedding(image_data):
     if face_count>1: raise HTTPException(status_code=422,detail="Multiple faces detected. Only one person may be registered at a time.")
     return embedding
 
+def _cosine_similarity(a,b):
+    a=np.asarray(a,dtype=np.float32); b=np.asarray(b,dtype=np.float32); na=np.linalg.norm(a); nb=np.linalg.norm(b)
+    return 0.0 if na==0 or nb==0 else float(np.dot(a,b)/(na*nb))
+
+def _capture_training_embeddings(face_images):
+    if len(face_images)!=10: raise HTTPException(status_code=422,detail="Exactly 10 face samples are required for registration.")
+    embeddings=[]; threshold=float(os.getenv("TRAINING_SAMPLE_SIMILARITY_THRESHOLD","0.985"))
+    for index,image in enumerate(face_images,1):
+        embedding=_capture_embedding(image)
+        if any(_cosine_similarity(embedding,old)>=threshold for old in embeddings):
+            raise HTTPException(status_code=422,detail=f"Face sample {index} is too similar to an earlier sample. Please retake the 10 poses with more variation.")
+        embeddings.append(np.asarray(embedding,dtype=np.float32).copy())
+    return embeddings
+
 def _launch_pipeline_if_not_running():
     global pipeline_process
     if pipeline_process is None or pipeline_process.poll() is not None: pipeline_process=subprocess.Popen([sys.executable,str(PIPELINE_SCRIPT)]); return True
@@ -97,7 +111,7 @@ def _build_summary(student_id):
 def health_check():return {"status":"ok","message":"VisionAttend AI backend is running"}
 
 class SignupRequest(BaseModel):
-    student_id:str=Field(min_length=1,max_length=32,pattern=r"^[A-Za-z0-9_-]+$");name:str|None=Field(default=None,max_length=100);email:str=Field(min_length=5,max_length=254);password:str=Field(min_length=6,max_length=72);gender:str=Field(min_length=1,max_length=30);face_image:str=Field(min_length=1,max_length=7000000)
+    student_id:str=Field(min_length=1,max_length=32,pattern=r"^[A-Za-z0-9_-]+$");name:str|None=Field(default=None,max_length=100);email:str=Field(min_length=5,max_length=254);password:str=Field(min_length=6,max_length=72);gender:str=Field(min_length=1,max_length=30);face_images:list[str]=Field(min_length=10,max_length=10)
 class LoginRequest(BaseModel): username:str=Field(min_length=1,max_length=64);password:str=Field(min_length=1,max_length=72)
 
 @app.post("/auth/signup")
@@ -107,23 +121,27 @@ def signup(request:SignupRequest):
     if user_manager.get_user_by_email(email) is not None:raise HTTPException(status_code=409,detail="An account with this email already exists.")
     name=(request.name or "").strip() if existing_face is None else existing_face["name"]
     if not name:raise HTTPException(status_code=422,detail="Name is required for a new student.")
-    embedding=_capture_embedding(request.face_image);face_database.add_person(student_id,name,embedding)
-    try:user=user_manager.create_user(username=student_id,password_hash=hash_password(request.password),role="student",student_id=student_id,name=name,email=email,gender=gender,auth_provider="local",email_verified=False)
-    except ValueError as exc:raise HTTPException(status_code=422,detail=str(exc))
-    if user is None:raise HTTPException(status_code=409,detail="An account for this student ID already exists.")
-    return {"success":True,"username":student_id,"name":name,"email":email,"gender":gender,"role":"student","face_registered":True}
+    embeddings=_capture_training_embeddings(request.face_images)
+    face_database.add_person(student_id,name,embeddings[0])
+    try:
+        face_database.add_training_embeddings(student_id,embeddings)
+        user=user_manager.create_user(username=student_id,password_hash=hash_password(request.password),role="student",student_id=student_id,name=name,email=email,gender=gender,auth_provider="local",email_verified=False)
+    except ValueError as exc:
+        face_database.delete_person(student_id); raise HTTPException(status_code=422,detail=str(exc))
+    except Exception:
+        face_database.delete_person(student_id); raise
+    if user is None:
+        face_database.delete_person(student_id); raise HTTPException(status_code=409,detail="An account for this student ID already exists.")
+    return {"success":True,"username":student_id,"name":name,"email":email,"gender":gender,"role":"student","face_registered":True,"training_samples":10}
 
 @app.post("/auth/login")
 def login(request:LoginRequest):
     user=user_manager.get_user(request.username)
     if user is None or not verify_password(request.password,user["password_hash"]):raise HTTPException(status_code=401,detail="Incorrect username or password.")
     if user.get("is_active") is False:raise HTTPException(status_code=403,detail="This account is disabled.")
-    user_manager.mark_login(user["username"])
-    token=create_access_token(username=user["username"],role=user["role"],student_id=user.get("student_id"),name=user.get("name"))
+    user_manager.mark_login(user["username"]);token=create_access_token(username=user["username"],role=user["role"],student_id=user.get("student_id"),name=user.get("name"))
     return {"access_token":token,"token_type":"bearer","role":user["role"],"name":user.get("name"),"student_id":user.get("student_id")}
 
-# The account_api router supplies /account/profile, /account/password, /account/photo and /account/security.
-# Existing attendance/session endpoints remain below.
 @app.get("/attendance/today")
 def get_today_attendance(admin=Depends(require_admin)):
     records=attendance_manager.get_today_attendance();return {"count":len(records),"records":list(records.values())}
