@@ -24,7 +24,7 @@ export default function TurnstileWidget({ onToken, disabled = false, resetKey = 
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
   useEffect(() => {
-    if (!siteKey || !containerRef.current || disabled) return;
+    if (!siteKey || !containerRef.current) return;
 
     const render = () => {
       if (!containerRef.current || !window.turnstile || widgetIdRef.current) return;
@@ -55,7 +55,13 @@ export default function TurnstileWidget({ onToken, disabled = false, resetKey = 
       widgetIdRef.current = undefined;
       if (containerRef.current) containerRef.current.innerHTML = "";
     };
-  }, [siteKey, disabled, onToken, resetKey]);
+  }, [siteKey, onToken]);
+
+  useEffect(() => {
+    if (!resetKey || !window.turnstile || !widgetIdRef.current) return;
+    window.turnstile.reset(widgetIdRef.current);
+    onToken("");
+  }, [resetKey, onToken]);
 
   if (!siteKey) {
     return <p className="text-xs text-absent">CAPTCHA is not configured. Set VITE_TURNSTILE_SITE_KEY.</p>;
