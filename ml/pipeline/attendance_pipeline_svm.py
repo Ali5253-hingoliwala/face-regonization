@@ -1,14 +1,12 @@
 """SVM-based multi-face attendance pipeline.
 
-This is an isolated successor to attendance_pipeline.py. The existing pipeline
-is intentionally left unchanged until this version is validated.
+Each YOLO detection is processed independently: the detected face is cropped,
+InsightFace extracts one embedding from that crop, SVM classifies the embedding,
+and the existing liveness/attendance flow runs per recognized student.
 
-Flow per detected face:
-    YOLO detection -> InsightFace embedding -> SVM identity -> per-face liveness
-    -> attendance
-
-The existing FastLivenessSignals implementation is reused on a one-face crop,
-so the anti-spoofing algorithms themselves are not replaced or modified.
+Using a dedicated crop for every YOLO detection avoids ambiguous many-to-one
+YOLO/InsightFace bounding-box matching when several faces overlap or are close
+together in a classroom frame.
 """
 
 from __future__ import annotations
@@ -51,11 +49,6 @@ WINDOW_NAME = "VisionAttend AI - SVM Attendance"
 SPOOF_WARNING_SECONDS = 3.0
 
 
-def bbox_area(bbox):
-    x1, y1, x2, y2 = bbox
-    return max(0, x2 - x1) * max(0, y2 - y1)
-
-
 def clamp_bbox(bbox, width, height):
     x1, y1, x2, y2 = map(int, bbox)
     x1 = max(0, min(x1, width - 1))
@@ -65,41 +58,28 @@ def clamp_bbox(bbox, width, height):
     return x1, y1, x2, y2
 
 
-def match_yolo_to_insightface(yolo_bbox, insight_faces, used_faces=None):
-    """Match one YOLO detection to one unique InsightFace result."""
-    used_faces = used_faces if used_faces is not None else set()
-    x1, y1, x2, y2 = yolo_bbox
-    center_x = (x1 + x2) / 2.0
-    center_y = (y1 + y2) / 2.0
-
-    candidates = []
-    for index, face in enumerate(insight_faces):
-        if index in used_faces:
-            continue
-
-        rx1, ry1, rx2, ry2 = map(float, face.bbox)
-        if rx1 <= center_x <= rx2 and ry1 <= center_y <= ry2:
-            candidates.append((index, face))
-
-    if not candidates:
-        return None
-
-    # Prefer the smallest containing InsightFace box, matching the standalone
-    # multi-face test and avoiding one large face being reused for another.
-    return min(candidates, key=lambda item: bbox_area(item[1].bbox))
-
-
-def classify_detection(detection, insight_faces, used_faces, svm, database):
-    """Classify one YOLO detection and return its display/attendance payload."""
+def classify_detection(detection, frame, recognizer, svm, database):
+    """Classify exactly one detected face using its own image crop."""
     bbox = detection["bbox"]
-    matched = match_yolo_to_insightface(bbox, insight_faces, used_faces)
-    if matched is None:
+    x1, y1, x2, y2 = clamp_bbox(
+        bbox, frame.shape[1], frame.shape[0]
+    )
+    face_crop = frame[y1:y2, x1:x2]
+
+    if face_crop.size == 0:
         return {"bbox": bbox, "match": None}
 
-    insight_index, insight_face = matched
-    used_faces.add(insight_index)
+    # The crop contains one YOLO-detected face, so InsightFace's single-face
+    # embedding path cannot accidentally select another person in the frame.
+    try:
+        embedding = recognizer.get_single_face_embedding(face_crop)
+    except Exception:
+        embedding = None
 
-    prediction = svm.predict(insight_face.embedding)
+    if embedding is None:
+        return {"bbox": bbox, "match": None}
+
+    prediction = svm.predict(embedding)
     if prediction is None:
         return {"bbox": bbox, "match": None}
 
@@ -107,12 +87,14 @@ def classify_detection(detection, insight_faces, used_faces, svm, database):
     student_id = prediction["student_id"]
     person = database.get(student_id)
 
-    # SVM probability is the identity acceptance gate. Unknown/low-confidence
-    # predictions stay UNKNOWN instead of being sent to liveness/attendance.
     if person is None or (
         confidence is not None and confidence < SVM_CONFIDENCE_THRESHOLD
     ):
-        return {"bbox": bbox, "match": None, "svm_prediction": prediction}
+        return {
+            "bbox": bbox,
+            "match": None,
+            "svm_prediction": prediction,
+        }
 
     return {
         "bbox": bbox,
@@ -120,7 +102,7 @@ def classify_detection(detection, insight_faces, used_faces, svm, database):
             "student_id": student_id,
             "name": person["name"],
             "confidence": confidence,
-            "embedding": insight_face.embedding,
+            "embedding": embedding,
         },
     }
 
@@ -214,7 +196,9 @@ def main():
     try:
         while True:
             current_time = datetime.now()
-            elapsed_seconds = (current_time - current_session["start_time"]).total_seconds()
+            elapsed_seconds = (
+                current_time - current_session["start_time"]
+            ).total_seconds()
             session_duration_seconds = current_session["duration_minutes"] * 60
 
             if elapsed_seconds >= session_duration_seconds:
@@ -232,16 +216,14 @@ def main():
 
             if frame_count % DETECTION_INTERVAL == 0 or not cached_results:
                 detections = detector.detect(frame)
-                insight_faces = recognizer.get_faces(frame) if detections else []
-                used_faces = set()
                 new_results = []
 
                 for detection in detections:
                     new_results.append(
                         classify_detection(
                             detection,
-                            insight_faces,
-                            used_faces,
+                            frame,
+                            recognizer,
                             svm,
                             database,
                         )
@@ -303,7 +285,9 @@ def main():
                 )
 
                 if live_status == "LIVE":
-                    attendance_status = session_manager.get_status_for_time(current_session)
+                    attendance_status = session_manager.get_status_for_time(
+                        current_session
+                    )
                     if attendance_status is not None:
                         attendance_result = attendance.mark_attendance(
                             student_id=student_id,
@@ -352,7 +336,9 @@ def main():
                     2,
                 )
 
-            remaining_seconds = max(0, int(session_duration_seconds - elapsed_seconds))
+            remaining_seconds = max(
+                0, int(session_duration_seconds - elapsed_seconds)
+            )
             cv2.putText(
                 frame,
                 f"Faces: {len(cached_results)}",
@@ -393,7 +379,13 @@ def main():
             if active_warnings:
                 box_x1, box_y1 = 15, frame.shape[0] - 75
                 box_x2, box_y2 = frame.shape[1] - 15, frame.shape[0] - 15
-                cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (0, 0, 180), -1)
+                cv2.rectangle(
+                    frame,
+                    (box_x1, box_y1),
+                    (box_x2, box_y2),
+                    (0, 0, 180),
+                    -1,
+                )
                 cv2.putText(
                     frame,
                     "SECURITY WARNING: FAKE / DUPLICATE PHOTO",
