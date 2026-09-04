@@ -35,7 +35,7 @@ app.include_router(leave_router)
 app.include_router(account_router)
 
 attendance_manager = AttendanceManager(); face_database = FaceDatabase(); session_manager = SessionManager(); user_manager = UserManager(); face_recognizer = None
-PIPELINE_SCRIPT = PROJECT_ROOT / "ml" / "pipeline" / "attendance_pipeline.py"; pipeline_process = None
+PIPELINE_SCRIPT = PROJECT_ROOT / "ml" / "pipeline" / "attendance_pipeline_svm.py"; pipeline_process = None
 
 def _get_face_recognizer():
     global face_recognizer
