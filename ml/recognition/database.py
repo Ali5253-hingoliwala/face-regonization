@@ -81,6 +81,40 @@ class FaceDatabase:
         print(f"Registered: {name} ({student_id})")
         return True
 
+    def add_training_embeddings(self, student_id, embeddings):
+        """Append validated, diverse enrollment embeddings for SVM training.
+
+        The original ``embedding`` field remains untouched so the existing
+        recognition pipeline continues to work exactly as before.
+        """
+        document = self.collection.find_one({"_id": student_id}, {"_id": 1, "training_embeddings": 1})
+        if document is None:
+            raise ValueError(f"Student '{student_id}' is not registered in the faces collection.")
+
+        existing = document.get("training_embeddings") or []
+        merged = list(existing)
+
+        for embedding in embeddings:
+            vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
+            if vector.size == 0 or not np.all(np.isfinite(vector)):
+                continue
+
+            # Avoid storing effectively identical frames as separate training
+            # examples. The threshold can be tuned without changing the live
+            # recognition or anti-spoofing pipeline.
+            duplicate_threshold = float(os.getenv("TRAINING_SAMPLE_SIMILARITY_THRESHOLD", "0.985"))
+            if any(self._cosine_similarity(vector, old) >= duplicate_threshold for old in merged):
+                continue
+
+            merged.append(vector.tolist())
+
+        self.collection.update_one(
+            {"_id": student_id},
+            {"$set": {"training_embeddings": merged}},
+        )
+
+        return len(merged)
+
     def delete_person(self, student_id):
         result = self.collection.delete_one({"_id": student_id})
         return result.deleted_count > 0
