@@ -9,11 +9,13 @@ from ml.utils.mongo_client import get_database
 from backend.google_auth import router as google_auth_router
 from backend.account_api import router as account_router
 from backend.consent_api import router as consent_router
+from backend.assistant_api import router as assistant_router
 
 router = APIRouter()
 router.include_router(google_auth_router)
 router.include_router(account_router)
 router.include_router(consent_router)
+router.include_router(assistant_router)
 leave_manager = LeaveManager(get_database())
 
 class LeaveRequestBody(BaseModel):
