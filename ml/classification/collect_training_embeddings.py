@@ -1,11 +1,7 @@
 """Collect 10 diverse, live face embeddings for an already-registered student.
 
-This is deliberately a separate enrollment-training step. It does not change
-email verification, account creation, the existing primary embedding, or the
-live attendance pipeline.
-
-The collector requires exactly one detected face, waits for a liveness signal,
-and rejects embeddings that are too similar to samples already accepted.
+Each accepted sample has a specific pose instruction. The collector advances
+to the next pose only after a valid live, diverse sample is captured.
 """
 
 from __future__ import annotations
@@ -33,6 +29,19 @@ TARGET_SAMPLES = 10
 MIN_CAPTURE_GAP_SECONDS = 0.60
 DIVERSITY_THRESHOLD = float(os.getenv("TRAINING_SAMPLE_SIMILARITY_THRESHOLD", "0.985"))
 
+POSES = [
+    "LOOK STRAIGHT",
+    "TURN SLIGHTLY LEFT",
+    "TURN SLIGHTLY RIGHT",
+    "LOOK SLIGHTLY UP",
+    "LOOK SLIGHTLY DOWN",
+    "LEFT + BLINK",
+    "RIGHT + BLINK",
+    "STRAIGHT + BLINK",
+    "SLIGHT LEFT + LOOK CENTER",
+    "SLIGHT RIGHT + LOOK CENTER",
+]
+
 
 def is_diverse(candidate, accepted) -> bool:
     """Return True only when candidate is not effectively a duplicate."""
@@ -50,6 +59,13 @@ def is_diverse(candidate, accepted) -> bool:
         if similarity >= DIVERSITY_THRESHOLD:
             return False
     return True
+
+
+def pose_instruction(index: int, target: int) -> str:
+    """Return the requested pose, cycling safely if a custom target > 10 is used."""
+    if index < len(POSES):
+        return POSES[index]
+    return POSES[index % len(POSES)]
 
 
 def collect(student_id: str, target: int = TARGET_SAMPLES) -> None:
@@ -75,8 +91,8 @@ def collect(student_id: str, target: int = TARGET_SAMPLES) -> None:
     print(f"Student: {person['name']} ({student_id})")
     print(f"Target: {target} diverse live samples")
     print("Only ONE face must be visible.")
-    print("Move naturally: slightly left/right/up/down between captures.")
-    print("Blink or change head/gaze direction so liveness can be verified.")
+    print("Follow the on-screen pose instruction. The instruction changes after each accepted sample.")
+    print("A blink may be requested for liveness on selected samples.")
     print("Press Q to cancel.\n")
 
     try:
@@ -85,6 +101,8 @@ def collect(student_id: str, target: int = TARGET_SAMPLES) -> None:
             if not ret:
                 raise RuntimeError("Failed to capture webcam frame.")
 
+            sample_index = len(accepted)
+            requested_pose = pose_instruction(sample_index, target)
             faces = recognizer.get_faces(frame)
             face_count = len(faces)
             status = "NO FACE"
@@ -103,18 +121,20 @@ def collect(student_id: str, target: int = TARGET_SAMPLES) -> None:
                         accepted.append(np.asarray(embedding, dtype=np.float32).copy())
                         last_capture = time.time()
                         liveness.reset()
-                        print(f"Accepted sample {len(accepted)}/{target}")
+                        print(f"Accepted sample {len(accepted)}/{target} - {requested_pose}")
                     else:
-                        status = "MOVE SLIGHTLY - SAMPLE TOO SIMILAR"
+                        status = "MOVE MORE - SAMPLE TOO SIMILAR"
             elif face_count > 1:
                 status = "MULTIPLE FACES - ONLY ONE ALLOWED"
             else:
                 liveness.reset()
 
-            cv2.putText(frame, f"ML Samples: {len(accepted)}/{target}", (20, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2)
-            cv2.putText(frame, f"Faces: {face_count}", (20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 255), 2)
-            cv2.putText(frame, status, (20, 94), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 255), 2)
-            cv2.putText(frame, "Q = Cancel", (20, 126), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 255), 2)
+            # Prominent pose guidance so the user always knows what to do next.
+            cv2.putText(frame, f"POSE {sample_index + 1}/{target}: {requested_pose}", (20, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 255, 255), 2)
+            cv2.putText(frame, f"ML Samples: {len(accepted)}/{target}", (20, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.68, (0, 255, 255), 2)
+            cv2.putText(frame, f"Faces: {face_count}", (20, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 255), 2)
+            cv2.putText(frame, status, (20, 122), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (0, 255, 255), 2)
+            cv2.putText(frame, "Follow POSE above | Q = Cancel", (20, 152), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
             cv2.imshow("VisionAttend AI - ML Enrollment", frame)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
