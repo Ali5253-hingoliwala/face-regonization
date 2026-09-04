@@ -75,12 +75,29 @@ function AssistantMessage({ content }: { content: string }) {
 }
 
 export default function AssistantWidget() {
-  const { isAuthenticated, role, name } = useAuth();
+  const { isAuthenticated, role, name, studentId, token } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const identityRef = useRef("");
+
+  const identityKey = isAuthenticated
+    ? `${token ?? ""}|${role ?? ""}|${studentId ?? ""}`
+    : "logged-out";
+
+  // Chat history belongs to the signed-in account, not to the widget itself.
+  // Clear it whenever the authenticated identity changes so a new account
+  // never sees the previous account's conversation.
+  useEffect(() => {
+    if (identityRef.current === identityKey) return;
+    identityRef.current = identityKey;
+    setMessages([]);
+    setInput("");
+    setLoading(false);
+    setOpen(false);
+  }, [identityKey]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -95,6 +112,7 @@ export default function AssistantWidget() {
   async function sendMessage(text = input) {
     const message = text.trim();
     if (!message || loading) return;
+    const requestIdentity = identityKey;
     const next = [...messages, { role: "user" as const, content: message }];
     setMessages(next);
     setInput("");
@@ -104,8 +122,11 @@ export default function AssistantWidget() {
         message,
         history: next.slice(-12),
       });
+      // Ignore a response that belongs to the account that was logged out.
+      if (identityRef.current !== requestIdentity) return;
       setMessages((current) => [...current, { role: "assistant", content: response.data?.answer || "I couldn't generate a response right now." }]);
     } catch (error: any) {
+      if (identityRef.current !== requestIdentity) return;
       const status = error?.response?.status;
       const fallback = status === 429
         ? "The free AI quota is temporarily busy. Please try again in a moment."
@@ -114,7 +135,7 @@ export default function AssistantWidget() {
           : "I couldn't reach the AI Assistant right now. Please try again.";
       setMessages((current) => [...current, { role: "assistant", content: fallback }]);
     } finally {
-      setLoading(false);
+      if (identityRef.current === requestIdentity) setLoading(false);
     }
   }
 
