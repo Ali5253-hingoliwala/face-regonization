@@ -12,6 +12,68 @@ const STARTERS = [
   "How do I apply for leave?",
 ];
 
+function renderInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index} className="font-semibold text-ink">{part.slice(2, -2)}</strong>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
+function AssistantMessage({ content }: { content: string }) {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const blocks: JSX.Element[] = [];
+  let bullets: string[] = [];
+
+  const flushBullets = () => {
+    if (!bullets.length) return;
+    blocks.push(
+      <ul key={`bullets-${blocks.length}`} className="my-1 space-y-1.5 pl-4">
+        {bullets.map((bullet, index) => (
+          <li key={index} className="list-disc pl-0.5">{renderInline(bullet)}</li>
+        ))}
+      </ul>
+    );
+    bullets = [];
+  };
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushBullets();
+      return;
+    }
+
+    const bulletMatch = line.match(/^[-•]\s+(.*)$/);
+    if (bulletMatch) {
+      bullets.push(bulletMatch[1]);
+      return;
+    }
+
+    flushBullets();
+
+    if (/^#{1,3}\s+/.test(line)) {
+      blocks.push(
+        <p key={`heading-${index}`} className="mb-1 mt-2 font-semibold text-ink">
+          {renderInline(line.replace(/^#{1,3}\s+/, ""))}
+        </p>
+      );
+      return;
+    }
+
+    blocks.push(
+      <p key={`line-${index}`} className="mb-1 last:mb-0">
+        {renderInline(line)}
+      </p>
+    );
+  });
+
+  flushBullets();
+  return <div className="space-y-0.5">{blocks}</div>;
+}
+
 export default function AssistantWidget() {
   const { isAuthenticated, role, name } = useAuth();
   const [open, setOpen] = useState(false);
@@ -69,7 +131,7 @@ export default function AssistantWidget() {
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         <div className="max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm leading-6 text-ink"><div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-accent"><Sparkles size={12} /> Assistant</div>{greeting}</div>
         {!messages.length && <div className="grid gap-2 pt-1">{STARTERS.map((starter) => <button key={starter} onClick={() => sendMessage(starter)} className="rounded-xl border border-line bg-panel px-3 py-2.5 text-left text-xs text-ink-muted transition hover:border-accent/40 hover:bg-accent-soft hover:text-ink">{starter}</button>)}</div>}
-        {messages.map((message, index) => <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-auto max-w-[84%] rounded-2xl rounded-tr-md bg-accent px-4 py-3 text-sm leading-6 text-white" : "max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm leading-6 text-ink"}>{message.content}</div>)}
+        {messages.map((message, index) => <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-auto max-w-[84%] rounded-2xl rounded-tr-md bg-accent px-4 py-3 text-sm leading-6 text-white" : "max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm leading-6 text-ink"}>{message.role === "assistant" ? <AssistantMessage content={message.content} /> : message.content}</div>)}
         {loading && <div className="max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm text-ink-muted"><span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:240ms]" /></span></div>}
         <div ref={endRef} />
       </div>
