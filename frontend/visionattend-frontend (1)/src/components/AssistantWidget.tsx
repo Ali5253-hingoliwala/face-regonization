@@ -5,11 +5,18 @@ import { useAuth } from "../context/AuthContext";
 
 type Message = { role: "user" | "assistant"; content: string };
 
-const STARTERS = [
-  "How is my attendance?",
+const STUDENT_STARTERS = [
+  "What's my attendance percentage?",
+  "Show my today's attendance",
+  "What's my leave balance?",
   "How does face attendance work?",
-  "Explain liveness detection",
-  "How do I apply for leave?",
+];
+
+const ADMIN_STARTERS = [
+  "How many students are present today?",
+  "Which students are absent today?",
+  "What sessions are scheduled today?",
+  "Are there any pending leave requests?",
 ];
 
 function renderInline(text: string) {
@@ -87,9 +94,8 @@ export default function AssistantWidget() {
     ? `${token ?? ""}|${role ?? ""}|${studentId ?? ""}`
     : "logged-out";
 
-  // Chat history belongs to the signed-in account, not to the widget itself.
-  // Clear it whenever the authenticated identity changes so a new account
-  // never sees the previous account's conversation.
+  const starters = role === "admin" ? ADMIN_STARTERS : STUDENT_STARTERS;
+
   useEffect(() => {
     if (identityRef.current === identityKey) return;
     identityRef.current = identityKey;
@@ -106,8 +112,8 @@ export default function AssistantWidget() {
   if (!isAuthenticated) return null;
 
   const greeting = role === "admin"
-    ? `Hi${name ? ` ${name}` : ""}! I'm VisionAttend AI. Ask me about today's attendance, sessions, students, leave management, or the AI attendance system.`
-    : `Hi${name ? ` ${name}` : ""}! I'm VisionAttend AI. I can help with your attendance, leave, face recognition, liveness detection, and how the portal works.`;
+    ? `Hi${name ? ` ${name}` : ""}! I'm VisionAttend AI. I can help you monitor attendance, manage sessions and leave requests, review student records, and understand the AI attendance system.`
+    : `Hi${name ? ` ${name}` : ""}! I'm VisionAttend AI. I can help with your attendance, leave, face recognition, liveness detection, and how the student portal works.`;
 
   async function sendMessage(text = input) {
     const message = text.trim();
@@ -122,7 +128,6 @@ export default function AssistantWidget() {
         message,
         history: next.slice(-12),
       });
-      // Ignore a response that belongs to the account that was logged out.
       if (identityRef.current !== requestIdentity) return;
       setMessages((current) => [...current, { role: "assistant", content: response.data?.answer || "I couldn't generate a response right now." }]);
     } catch (error: any) {
@@ -151,7 +156,7 @@ export default function AssistantWidget() {
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         <div className="max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm leading-6 text-ink"><div className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-accent"><Sparkles size={12} /> Assistant</div>{greeting}</div>
-        {!messages.length && <div className="grid gap-2 pt-1">{STARTERS.map((starter) => <button key={starter} onClick={() => sendMessage(starter)} className="rounded-xl border border-line bg-panel px-3 py-2.5 text-left text-xs text-ink-muted transition hover:border-accent/40 hover:bg-accent-soft hover:text-ink">{starter}</button>)}</div>}
+        {!messages.length && <div className="grid gap-2 pt-1">{starters.map((starter) => <button key={starter} onClick={() => sendMessage(starter)} className="rounded-xl border border-line bg-panel px-3 py-2.5 text-left text-xs text-ink-muted transition hover:border-accent/40 hover:bg-accent-soft hover:text-ink">{starter}</button>)}</div>}
         {messages.map((message, index) => <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-auto max-w-[84%] rounded-2xl rounded-tr-md bg-accent px-4 py-3 text-sm leading-6 text-white" : "max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm leading-6 text-ink"}>{message.role === "assistant" ? <AssistantMessage content={message.content} /> : message.content}</div>)}
         {loading && <div className="max-w-[88%] rounded-2xl rounded-tl-md border border-line bg-panel-hover px-4 py-3 text-sm text-ink-muted"><span className="inline-flex items-center gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:120ms]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:240ms]" /></span></div>}
         <div ref={endRef} />
