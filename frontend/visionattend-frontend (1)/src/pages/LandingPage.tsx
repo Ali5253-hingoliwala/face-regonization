@@ -1,17 +1,154 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowRight, ScanFace, ShieldCheck } from "lucide-react";
-import Navbar from "../components/Navbar";
-
-const panels = [
-  { id: "features", title: "Features", text: "AI face recognition, liveness detection, session-based attendance and automatic Present, Late or Absent tracking.", icon: ScanFace },
-  { id: "how", title: "How it works", text: "Schedule a lecture, start the AI session, verify each real face, and let VisionAttend record attendance automatically.", icon: ShieldCheck },
-];
-const faceRecognitionImage = "https://blog.truora.com/hubfs/biometria%20facial.jpg";
-const networkBackground = "/images/image-1686134756-7294.jpg";
+import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { mountFaceModelScanner } from "../components/landing/FaceModelScanner";
+import "./landing-page.css";
+import "./landing-page-overrides.css";
+import template from "./landing-page-template.html?raw";
 
 export default function LandingPage() {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const active = panels.find(p => p.id === expanded);
-  return <div className="min-h-screen bg-bg text-ink"><Navbar activePanel={expanded} onPanelChange={setExpanded}/><main className={`mx-auto flex min-h-[calc(100vh-64px)] max-w-6xl items-center px-6 py-8 transition-all duration-500 ${expanded ? "items-start pt-8" : ""}`}><div className={`w-full overflow-hidden rounded-3xl border border-line bg-panel shadow-sm transition-all duration-500 ${expanded ? "min-h-[calc(100vh-112px)]" : "max-w-3xl mx-auto"}`}><div className="grid min-h-[520px] md:grid-cols-[1.05fr_.95fr]"><section className="flex flex-col justify-center p-8 sm:p-12"><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-accent">AI attendance • verified</p><h1 className="mt-4 font-display text-4xl font-semibold leading-tight sm:text-5xl">Smart attendance.<br/>Powered by AI.</h1><p className="mt-5 max-w-lg text-sm leading-6 text-ink-muted sm:text-base">VisionAttend recognizes students, confirms liveness and records attendance against every lecture session.</p><div className="mt-8 flex flex-wrap gap-3"><Link to="/signup" className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-medium text-white hover:bg-accent-dim transition">Get Started <ArrowRight size={16}/></Link><Link to="/login" className="inline-flex items-center gap-2 rounded-xl border border-line px-5 py-3 text-sm font-medium hover:bg-panel-hover transition">Log in</Link></div>{expanded&&active&&<div className="mt-10 rounded-2xl border border-line bg-bg p-5 animate-in fade-in"><div className="flex items-center gap-3"><active.icon size={20} className="text-accent"/><h2 className="font-display text-xl font-semibold">{active.title}</h2></div><p className="mt-3 text-sm leading-6 text-ink-muted">{active.text}</p></div>}</section><section className="relative flex items-center justify-center overflow-hidden border-t border-line bg-[#f4efe7] p-8 md:border-l md:border-t-0"><div className="absolute inset-0" style={{backgroundImage:`url("${networkBackground}")`,backgroundRepeat:"repeat",backgroundSize:"300px 300px",backgroundPosition:"center center"}}/><div className="absolute inset-0 bg-[#f4efe7]/0"/><div className="relative z-10 h-72 w-72 overflow-hidden rounded-3xl border border-accent/20 bg-panel shadow-lg sm:h-80 sm:w-80"><img src={faceRecognitionImage} alt="AI face recognition scan" className="h-full w-full object-cover"/><div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent"/><div className="absolute left-6 right-6 top-6 bottom-6 border border-white/80 rounded-sm pointer-events-none"/><div className="absolute bottom-5 left-5 right-5 flex items-center justify-between font-mono text-[10px] text-white drop-shadow"><span>VISIONATTEND AI</span><span className="text-green-300">LIVE READY</span></div></div></section></div></div></main><footer className="border-t border-line bg-panel"><div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between"><p>© 2026 VisionAttend AI. Smart attendance powered by AI.</p><nav className="flex flex-wrap gap-4"><Link to="/privacy" className="hover:text-accent">Privacy</Link><Link to="/terms" className="hover:text-accent">Terms</Link><Link to="/cookies" className="hover:text-accent">Cookies</Link><button onClick={()=>{localStorage.removeItem("va_cookie_preferences");window.location.reload()}} className="hover:text-accent">Cookie Preferences</button></nav></div></footer></div>;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    document.title = "VisionAttend — AI Face Recognition Attendance System";
+    root.innerHTML = template;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const canHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    const cleanups: Array<() => void> = [];
+
+    const on = (
+      element: HTMLElement | Document | Window,
+      event: string,
+      handler: EventListener | EventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) => {
+      element.addEventListener(event, handler, options);
+      cleanups.push(() => element.removeEventListener(event, handler, options));
+    };
+
+    const header = root.querySelector<HTMLElement>("#site-header");
+    const onScroll = () => header?.classList.toggle("is-scrolled", window.scrollY > 12);
+    on(window, "scroll", onScroll, { passive: true });
+    onScroll();
+
+    const navToggle = root.querySelector<HTMLButtonElement>("#nav-toggle");
+    const navLinks = root.querySelector<HTMLElement>("#nav-links");
+    if (navToggle) {
+      on(navToggle, "click", () => {
+        const isOpen = root.classList.toggle("nav-open");
+        navToggle.setAttribute("aria-expanded", String(isOpen));
+      });
+    }
+    navLinks?.querySelectorAll("a").forEach((link) => {
+      on(link, "click", () => {
+        root.classList.remove("nav-open");
+        navToggle?.setAttribute("aria-expanded", "false");
+      });
+    });
+
+    const go = (path: string) => navigate(path);
+    const authClick = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest("button");
+      if (!button || !root.contains(button)) return;
+      if (button.dataset.cookieReset === "true") return;
+      const text = button.textContent?.trim().toLowerCase();
+      if (text === "log in" || text === "sign up" || text === "get started" || text === "create account") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        go(text === "log in" ? "/login" : "/signup");
+      }
+    };
+    on(root, "click", authClick, true);
+
+    const authSubmit = (event: Event) => {
+      const form = event.target as HTMLFormElement | null;
+      if (!form) return;
+      if (form.id === "login-form" || form.id === "signup-form") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        go(form.id === "signup-form" ? "/signup" : "/login");
+      }
+    };
+    on(root, "submit", authSubmit, true);
+
+    const cookieReset = root.querySelector<HTMLButtonElement>("[data-cookie-reset='true']");
+    if (cookieReset) {
+      on(cookieReset, "click", () => {
+        localStorage.removeItem("va_cookie_preferences");
+        window.location.reload();
+      });
+    }
+
+    const contactForm = root.querySelector<HTMLFormElement>("#contact-form");
+    const contactSuccess = root.querySelector<HTMLElement>("#contact-success");
+    let successTimer: number | undefined;
+    if (contactForm) {
+      on(contactForm, "submit", (event) => {
+        event.preventDefault();
+        contactSuccess?.classList.add("show");
+        contactForm.reset();
+        if (successTimer) window.clearTimeout(successTimer);
+        successTimer = window.setTimeout(() => contactSuccess?.classList.remove("show"), 6000);
+      });
+    }
+
+    const revealEls = root.querySelectorAll<HTMLElement>(".reveal");
+    if (prefersReducedMotion) {
+      revealEls.forEach((el) => el.classList.add("is-visible"));
+    } else {
+      const io = new IntersectionObserver(
+        (entries) => entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            io.unobserve(entry.target);
+          }
+        }),
+        { threshold: 0.15 },
+      );
+      revealEls.forEach((el) => io.observe(el));
+      cleanups.push(() => io.disconnect());
+    }
+
+    if (canHover && !prefersReducedMotion) {
+      root.querySelectorAll<HTMLElement>(".tilt-card").forEach((card) => {
+        const move = (event: Event) => {
+          const pointer = event as PointerEvent;
+          const rect = card.getBoundingClientRect();
+          const x = (pointer.clientX - rect.left) / rect.width - 0.5;
+          const y = (pointer.clientY - rect.top) / rect.height - 0.5;
+          card.style.setProperty("--rx", `${(-y * 8).toFixed(2)}deg`);
+          card.style.setProperty("--ry", `${(x * 8).toFixed(2)}deg`);
+          card.style.setProperty("--mx", `${(x + 0.5) * 100}%`);
+          card.style.setProperty("--my", `${(y + 0.5) * 100}%`);
+        };
+        const leave = () => {
+          card.style.setProperty("--rx", "0deg");
+          card.style.setProperty("--ry", "0deg");
+        };
+        on(card, "pointermove", move);
+        on(card, "pointerleave", leave);
+      });
+    }
+
+    const canvas = root.querySelector<HTMLCanvasElement>("#face-canvas");
+    const disposeFaceModel = canvas ? mountFaceModelScanner(canvas) : undefined;
+    if (disposeFaceModel) cleanups.push(disposeFaceModel);
+
+    const yearEl = root.querySelector<HTMLElement>("#year");
+    if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+
+    return () => {
+      if (successTimer) window.clearTimeout(successTimer);
+      cleanups.reverse().forEach((cleanup) => cleanup());
+      root.classList.remove("nav-open");
+      root.innerHTML = "";
+    };
+  }, [navigate]);
+
+  return <div ref={rootRef} className="landing-page" />;
 }
