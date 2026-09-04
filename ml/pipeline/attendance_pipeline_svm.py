@@ -85,7 +85,7 @@ def classify_detection(detection, frame, recognizer, svm, database):
     # The crop contains one YOLO-detected face, so InsightFace's single-face
     # embedding path cannot accidentally select another person in the frame.
     try:
-        embedding = recognizer.get_single_face_embedding(face_crop)
+        embedding, _ = recognizer.get_single_face_embedding(face_crop)
     except Exception:
         embedding = None
 
