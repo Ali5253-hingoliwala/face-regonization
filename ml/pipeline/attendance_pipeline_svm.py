@@ -11,8 +11,9 @@ together in a classroom frame.
 
 from __future__ import annotations
 
+import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
@@ -62,6 +63,21 @@ WINDOW_NAME = "VisionAttend AI - SVM Attendance"
 SPOOF_WARNING_SECONDS = 3.0
 
 
+def session_clock_now():
+    """Return the clock matching the timestamp source used by the session.
+
+    Render runs the cloud API in UTC. The local worker explicitly sets
+    VISIONATTEND_SESSION_CLOCK=utc before launching this process, so a
+    Render-created session is not interpreted as IST on the webcam machine.
+    Local development keeps the previous local-time behavior.
+    """
+    if os.getenv("VISIONATTEND_SESSION_CLOCK", "local").lower() == "utc":
+        # Existing MongoDB session documents use naive datetimes, so keep the
+        # UTC value naive here for compatibility with those documents.
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now()
+
+
 def clamp_bbox(bbox, width, height):
     x1, y1, x2, y2 = map(int, bbox)
     x1 = max(0, min(x1, width - 1))
@@ -82,8 +98,6 @@ def classify_detection(detection, frame, recognizer, svm, database):
     if face_crop.size == 0:
         return {"bbox": bbox, "match": None}
 
-    # The crop contains one YOLO-detected face, so InsightFace's single-face
-    # embedding path cannot accidentally select another person in the frame.
     try:
         embedding, _ = recognizer.get_single_face_embedding(face_crop)
     except Exception:
@@ -208,7 +222,7 @@ def main():
 
     try:
         while True:
-            current_time = datetime.now()
+            current_time = session_clock_now()
             elapsed_seconds = (
                 current_time - current_session["start_time"]
             ).total_seconds()
@@ -299,7 +313,8 @@ def main():
 
                 if live_status == "LIVE":
                     attendance_status = session_manager.get_status_for_time(
-                        current_session
+                        current_session,
+                        check_time=current_time,
                     )
                     if attendance_status is not None:
                         attendance_result = attendance.mark_attendance(
