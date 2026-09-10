@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, KeyRound, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { api } from "../api/client";
@@ -14,7 +15,6 @@ export default function ResetPasswordPage(){
   setLoading(true);
   try{
    const r=await api.post("/auth/password/reset",{token,new_password:password,confirm_password:confirm});
-   // A password reset must not leave an old authenticated browser session active.
    localStorage.removeItem("va_token"); localStorage.removeItem("va_role"); localStorage.removeItem("va_name"); localStorage.removeItem("va_student_id");
    setMessage(r.data?.message||"Password reset successfully. You can now log in with your new password."); setDone(true);
   }catch(err:any){setError(err?.response?.data?.detail||"This reset link is invalid or expired. Please request a new one.");}
