@@ -27,7 +27,7 @@ services:
 
   - type: static
     name: visionattend-web
-    rootDir: frontend/visionattend-frontend (1)
+    rootDir: frontend/visionattend-frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
