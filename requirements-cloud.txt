@@ -1,0 +1,16 @@
+fastapi==0.141.1
+uvicorn==0.52.3
+pydantic==2.13.4
+pydantic_core==2.46.4
+pymongo==3.12.0
+python-dotenv==1.2.3
+requests==2.34.2
+google-genai
+PyYAML==6.0.3
+starlette==1.6.0
+numpy==2.5.1
+opencv-python==5.0.0.93
+insightface==1.0.1
+onnxruntime==1.28.0
+joblib==1.5.2
+scikit-learn==1.8.0
