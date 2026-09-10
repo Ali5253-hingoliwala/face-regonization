@@ -33,6 +33,7 @@ def _send_with_brevo(to_email: str, subject: str, text: str, html: str | None = 
     if html:
         payload["htmlContent"] = html
 
+    print(f"[EMAIL] Sending via Brevo: sender={sender_email}, recipient={to_email}, subject={subject}")
     response = requests.post(
         BREVO_API_URL,
         headers={
@@ -43,11 +44,13 @@ def _send_with_brevo(to_email: str, subject: str, text: str, html: str | None = 
         json=payload,
         timeout=20,
     )
+    print(f"[EMAIL] Brevo response status: {response.status_code}")
     if not response.ok:
         try:
             detail = response.json().get("message", response.text)
         except ValueError:
             detail = response.text
+        print(f"[EMAIL] Brevo request failed: {response.status_code} - {detail}")
         raise RuntimeError(f"Brevo email request failed ({response.status_code}): {detail}")
 
 
