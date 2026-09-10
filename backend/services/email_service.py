@@ -2,10 +2,14 @@ import os
 import smtplib
 from email.message import EmailMessage
 from pathlib import Path
+
+import requests
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
+
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def _required(name: str) -> str:
@@ -15,7 +19,39 @@ def _required(name: str) -> str:
     return value
 
 
-def send_email(to_email: str, subject: str, text: str, html: str | None = None) -> None:
+def _send_with_brevo(to_email: str, subject: str, text: str, html: str | None = None) -> None:
+    api_key = _required("BREVO_API_KEY")
+    sender_email = _required("BREVO_SENDER_EMAIL")
+    sender_name = os.getenv("BREVO_SENDER_NAME", "VisionAttend AI").strip() or "VisionAttend AI"
+
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "textContent": text,
+    }
+    if html:
+        payload["htmlContent"] = html
+
+    response = requests.post(
+        BREVO_API_URL,
+        headers={
+            "accept": "application/json",
+            "api-key": api_key,
+            "content-type": "application/json",
+        },
+        json=payload,
+        timeout=20,
+    )
+    if not response.ok:
+        try:
+            detail = response.json().get("message", response.text)
+        except ValueError:
+            detail = response.text
+        raise RuntimeError(f"Brevo email request failed ({response.status_code}): {detail}")
+
+
+def _send_with_smtp(to_email: str, subject: str, text: str, html: str | None = None) -> None:
     host = _required("SMTP_HOST")
     username = _required("SMTP_USERNAME")
     password = _required("SMTP_PASSWORD")
@@ -42,3 +78,12 @@ def send_email(to_email: str, subject: str, text: str, html: str | None = None) 
             server.ehlo()
             server.login(username, password)
             server.send_message(message)
+
+
+def send_email(to_email: str, subject: str, text: str, html: str | None = None) -> None:
+    # Render Free cannot reliably use outbound SMTP. Prefer Brevo's HTTPS API
+    # whenever a production API key is configured; keep SMTP for local fallback.
+    if os.getenv("BREVO_API_KEY", "").strip():
+        _send_with_brevo(to_email, subject, text, html)
+        return
+    _send_with_smtp(to_email, subject, text, html)
