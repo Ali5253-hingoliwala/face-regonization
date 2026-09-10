@@ -179,7 +179,7 @@ def _generate(prompt: str, system_instruction: str) -> str:
         message = str(exc).lower()
         if "429" in message or "quota" in message or "resource exhausted" in message:
             raise HTTPException(status_code=429, detail="The free AI quota is temporarily busy. Please try again in a moment.") from exc
-        raise HTTPException(status_code=502, detail="The AI Assistant could not reach Gemini right now. Please try again.") from exc
+        raise HTTPException(status_code=502, detail=f"Gemini error: {type(exc).__name__}: {exc}") from exc
 
 
 @router.post("/chat")
