@@ -20,7 +20,7 @@ type Props = {
 
 export default function TurnstileWidget({ onToken, disabled = false, resetKey = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<string | undefined>();
+  const widgetIdRef = useRef<string | undefined>(undefined);
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
   useEffect(() => {
