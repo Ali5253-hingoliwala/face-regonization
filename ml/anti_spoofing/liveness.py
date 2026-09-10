@@ -2,76 +2,94 @@ import time
 
 
 class LivenessDetector:
-    """
-    Fast, lightweight liveness check.
+    """Per-face liveness state machine for the attendance demo.
 
-    Instead of requiring a blink AND a head turn within a fixed
-    window (slow, rigid), this treats blink OR head movement OR
-    gaze movement as proof of life -- a real person naturally does
-    at least one of these within a couple of seconds.
-
-    If NONE of the three signals ever change over a longer window,
-    that's a strong sign the camera is looking at a static photo
-    rather than a real face.
+    A real blink is accepted immediately. Head/gaze movement must be a
+    deliberate direction change that remains stable for a few frames. This
+    avoids treating tiny MediaPipe landmark jitter from a static phone photo
+    as proof of life.
     """
 
     def __init__(self):
-
         self.start_time = time.time()
-
-        # Presentation/demo setting: give a static photo about 10 seconds
-        # before flagging it, while still allowing normal live movement.
-        self.checking_timeout = 3.0
         self.static_photo_timeout = 10.0
 
+        self.initial_direction = None
+        self.initial_gaze = None
         self.last_direction = None
         self.last_gaze = None
+        self.direction_candidate = None
+        self.direction_candidate_frames = 0
+        self.gaze_candidate = None
+        self.gaze_candidate_frames = 0
 
         self.movement_detected = False
         self.movement_type = None
-
         self.status = "CHECKING"
 
-    def update(self, blink, direction, gaze):
-        """
-        Call this once per frame with the latest signals from
-        FastLivenessSignals.process(frame):
-            blink: bool
-            direction: "LEFT" / "CENTER" / "RIGHT" / None
-            gaze: "LEFT" / "CENTER" / "RIGHT" / None
-        """
+        # Require a small amount of temporal consistency before accepting a
+        # head/gaze transition. A static image can otherwise jitter between
+        # neighboring landmark classifications.
+        self.required_stable_frames = 3
 
+    def update(self, blink, direction, gaze):
         elapsed = time.time() - self.start_time
 
+        # A completed blink is the strongest lightweight liveness signal.
         if blink:
             self.movement_detected = True
-            self.movement_type = self.movement_type or "blink"
+            self.movement_type = "blink"
 
-        if (
-            direction is not None
-            and self.last_direction is not None
-            and direction != self.last_direction
-        ):
-            self.movement_detected = True
-            self.movement_type = self.movement_type or "head movement"
-
-        if (
-            gaze is not None
-            and self.last_gaze is not None
-            and gaze != self.last_gaze
-        ):
-            self.movement_detected = True
-            self.movement_type = self.movement_type or "gaze movement"
-
+        # Establish the initial head direction, then require a different
+        # direction to persist for several frames before accepting movement.
         if direction is not None:
-            self.last_direction = direction
+            if self.initial_direction is None:
+                self.initial_direction = direction
+            if self.last_direction is None:
+                self.last_direction = direction
+            elif direction != self.last_direction:
+                if self.direction_candidate == direction:
+                    self.direction_candidate_frames += 1
+                else:
+                    self.direction_candidate = direction
+                    self.direction_candidate_frames = 1
 
+                if self.direction_candidate_frames >= self.required_stable_frames:
+                    self.movement_detected = True
+                    self.movement_type = self.movement_type or "head movement"
+                    self.last_direction = direction
+                    self.direction_candidate = None
+                    self.direction_candidate_frames = 0
+            else:
+                self.direction_candidate = None
+                self.direction_candidate_frames = 0
+
+        # Same protection for horizontal gaze movement.
         if gaze is not None:
-            self.last_gaze = gaze
+            if self.initial_gaze is None:
+                self.initial_gaze = gaze
+            if self.last_gaze is None:
+                self.last_gaze = gaze
+            elif gaze != self.last_gaze:
+                if self.gaze_candidate == gaze:
+                    self.gaze_candidate_frames += 1
+                else:
+                    self.gaze_candidate = gaze
+                    self.gaze_candidate_frames = 1
+
+                if self.gaze_candidate_frames >= self.required_stable_frames:
+                    self.movement_detected = True
+                    self.movement_type = self.movement_type or "gaze movement"
+                    self.last_gaze = gaze
+                    self.gaze_candidate = None
+                    self.gaze_candidate_frames = 0
+            else:
+                self.gaze_candidate = None
+                self.gaze_candidate_frames = 0
 
         if self.movement_detected:
             self.status = "LIVE"
-        elif elapsed > self.static_photo_timeout:
+        elif elapsed >= self.static_photo_timeout:
             self.status = "POSSIBLE PHOTO - NO MOVEMENT DETECTED"
         else:
             self.status = "CHECKING"
@@ -86,8 +104,14 @@ class LivenessDetector:
 
     def reset(self):
         self.start_time = time.time()
+        self.initial_direction = None
+        self.initial_gaze = None
         self.last_direction = None
         self.last_gaze = None
+        self.direction_candidate = None
+        self.direction_candidate_frames = 0
+        self.gaze_candidate = None
+        self.gaze_candidate_frames = 0
         self.movement_detected = False
         self.movement_type = None
         self.status = "CHECKING"
