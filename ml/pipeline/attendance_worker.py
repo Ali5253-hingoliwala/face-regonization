@@ -15,6 +15,7 @@ project .env handling.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -37,7 +38,16 @@ from session_manager import SessionManager
 
 def start_pipeline() -> subprocess.Popen:
     print("[WORKER] Starting local SVM attendance pipeline...")
-    return subprocess.Popen([sys.executable, str(PIPELINE_SCRIPT)], cwd=str(PROJECT_ROOT))
+    # Render stores session timestamps in UTC. The local machine may be in
+    # another timezone (for example IST), so explicitly tell the child
+    # pipeline to use the same UTC session clock when launched by this worker.
+    env = os.environ.copy()
+    env["VISIONATTEND_SESSION_CLOCK"] = "utc"
+    return subprocess.Popen(
+        [sys.executable, str(PIPELINE_SCRIPT)],
+        cwd=str(PROJECT_ROOT),
+        env=env,
+    )
 
 
 def stop_pipeline(process: subprocess.Popen) -> None:
