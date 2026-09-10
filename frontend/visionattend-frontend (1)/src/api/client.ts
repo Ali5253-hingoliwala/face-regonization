@@ -1,12 +1,11 @@
 import axios from "axios";
 
-// Backend runs locally alongside the ML pipeline (see project notes:
-// the pipeline needs a real webcam, so this backend always runs on
-// whatever machine has the camera attached, not a remote server).
-const API_BASE_URL = "http://127.0.0.1:8000";
+// Local development keeps the existing localhost behavior. For deployment,
+// Vite injects VITE_API_URL at build time.
+const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || "http://127.0.0.1:8000";
 
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE_URL.replace(/\/$/, ""),
 });
 
 // Attach the stored token to every request automatically.
