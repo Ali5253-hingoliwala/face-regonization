@@ -1,13 +1,4 @@
-"""SVM-based multi-face attendance pipeline.
-
-Each YOLO detection is processed independently: the detected face is cropped,
-InsightFace extracts one embedding from that crop, SVM classifies the embedding,
-and the existing liveness/attendance flow runs per recognized student.
-
-Using a dedicated crop for every YOLO detection avoids ambiguous many-to-one
-YOLO/InsightFace bounding-box matching when several faces overlap or are close
-together in a classroom frame.
-"""
+"""SVM-based multi-face attendance pipeline with per-face liveness checks."""
 
 from __future__ import annotations
 
@@ -29,9 +20,6 @@ LOG_DIR = PROJECT_ROOT / "ml" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "svm_pipeline.log"
 
-# The admin portal launches this process separately from the frontend.
-# Redirect stdout/stderr so startup failures and tracebacks are preserved even
-# when the backend is started without a visible terminal.
 _log_handle = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
 sys.stdout = _log_handle
 sys.stderr = _log_handle
@@ -39,13 +27,7 @@ print("\n" + "=" * 64)
 print(f"SVM pipeline process started: {datetime.now().isoformat()}")
 print("=" * 64)
 
-for folder in (
-    DETECTION_DIR,
-    RECOGNITION_DIR,
-    ANTI_SPOOFING_DIR,
-    ATTENDANCE_DIR,
-    CLASSIFICATION_DIR,
-):
+for folder in (DETECTION_DIR, RECOGNITION_DIR, ANTI_SPOOFING_DIR, ATTENDANCE_DIR, CLASSIFICATION_DIR):
     sys.path.append(str(folder))
 
 from detector import FaceDetector
@@ -57,23 +39,16 @@ from attendance_manager import AttendanceManager
 from session_manager import SessionManager
 from svm_recognizer import SVMFaceClassifier
 
-SVM_CONFIDENCE_THRESHOLD = 0.70
+# Temporary presentation settings.
+# 60% is more forgiving for the small demo dataset than the previous 70%.
+SVM_CONFIDENCE_THRESHOLD = 0.60
 DETECTION_INTERVAL = 2
 WINDOW_NAME = "VisionAttend AI - SVM Attendance"
 SPOOF_WARNING_SECONDS = 3.0
 
 
 def session_clock_now():
-    """Return the clock matching the timestamp source used by the session.
-
-    Render runs the cloud API in UTC. The local worker explicitly sets
-    VISIONATTEND_SESSION_CLOCK=utc before launching this process, so a
-    Render-created session is not interpreted as IST on the webcam machine.
-    Local development keeps the previous local-time behavior.
-    """
     if os.getenv("VISIONATTEND_SESSION_CLOCK", "local").lower() == "utc":
-        # Existing MongoDB session documents use naive datetimes, so keep the
-        # UTC value naive here for compatibility with those documents.
         return datetime.now(timezone.utc).replace(tzinfo=None)
     return datetime.now()
 
@@ -88,38 +63,40 @@ def clamp_bbox(bbox, width, height):
 
 
 def classify_detection(detection, frame, recognizer, svm, database):
-    """Classify exactly one detected face using its own image crop."""
-    bbox = detection["bbox"]
-    x1, y1, x2, y2 = clamp_bbox(
-        bbox, frame.shape[1], frame.shape[0]
-    )
-    face_crop = frame[y1:y2, x1:x2]
+    """Generate an embedding and SVM prediction for one YOLO detection.
 
+    The prediction is retained even when below the acceptance threshold so
+    that liveness can still run on an unrecognized face. This is important for
+    rejecting a phone photo instead of simply displaying UNKNOWN.
+    """
+    bbox = detection["bbox"]
+    x1, y1, x2, y2 = clamp_bbox(bbox, frame.shape[1], frame.shape[0])
+    face_crop = frame[y1:y2, x1:x2]
     if face_crop.size == 0:
-        return {"bbox": bbox, "match": None}
+        return {"bbox": bbox, "match": None, "embedding": None}
 
     try:
         embedding, _ = recognizer.get_single_face_embedding(face_crop)
-    except Exception:
+    except Exception as exc:
+        print(f"[RECOGNITION] Embedding error: {type(exc).__name__}: {exc}")
         embedding = None
 
     if embedding is None:
-        return {"bbox": bbox, "match": None}
+        return {"bbox": bbox, "match": None, "embedding": None}
 
     prediction = svm.predict(embedding)
     if prediction is None:
-        return {"bbox": bbox, "match": None}
+        return {"bbox": bbox, "match": None, "embedding": embedding}
 
     confidence = prediction["confidence"]
     student_id = prediction["student_id"]
     person = database.get(student_id)
 
-    if person is None or (
-        confidence is not None and confidence < SVM_CONFIDENCE_THRESHOLD
-    ):
+    if person is None or (confidence is not None and confidence < SVM_CONFIDENCE_THRESHOLD):
         return {
             "bbox": bbox,
             "match": None,
+            "embedding": embedding,
             "svm_prediction": prediction,
         }
 
@@ -131,6 +108,8 @@ def classify_detection(detection, frame, recognizer, svm, database):
             "confidence": confidence,
             "embedding": embedding,
         },
+        "embedding": embedding,
+        "svm_prediction": prediction,
     }
 
 
@@ -176,18 +155,13 @@ def main():
     svm = SVMFaceClassifier()
 
     print(f"Registered people: {len(database)}")
-    print(f"SVM confidence threshold: {SVM_CONFIDENCE_THRESHOLD:.0%}")
-
-    if not database:
-        print("WARNING: No registered faces found.")
-
+    print(f"TEMPORARY DEMO SVM confidence threshold: {SVM_CONFIDENCE_THRESHOLD:.0%}")
     print("\nLoading per-face anti-spoofing...")
-    print("Each recognized face gets its own liveness controller and landmark detector.")
+    print("Liveness is checked for every detected face, including UNKNOWN faces.")
 
     attendance = AttendanceManager()
     session_manager = SessionManager()
     current_session = session_manager.get_current_session()
-
     if current_session is None:
         print("\nERROR: No active lecture session.")
         print("Start a session from the admin portal first.")
@@ -205,7 +179,6 @@ def main():
 
     liveness_controllers = {}
     liveness_signals = {}
-
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("ERROR: Could not open webcam.")
@@ -223,16 +196,12 @@ def main():
     try:
         while True:
             current_time = session_clock_now()
-            elapsed_seconds = (
-                current_time - current_session["start_time"]
-            ).total_seconds()
+            elapsed_seconds = (current_time - current_session["start_time"]).total_seconds()
             session_duration_seconds = current_session["duration_minutes"] * 60
 
             if elapsed_seconds >= session_duration_seconds:
                 print("\n[SESSION] Session duration completed.")
-                close_session_and_mark_absentees(
-                    session_manager, attendance, face_db, current_session
-                )
+                close_session_and_mark_absentees(session_manager, attendance, face_db, current_session)
                 session_finished = True
                 break
 
@@ -243,72 +212,66 @@ def main():
 
             if frame_count % DETECTION_INTERVAL == 0 or not cached_results:
                 detections = detector.detect(frame)
-                new_results = []
-
-                for detection in detections:
-                    new_results.append(
-                        classify_detection(
-                            detection,
-                            frame,
-                            recognizer,
-                            svm,
-                            database,
-                        )
-                    )
-
-                cached_results = new_results
+                cached_results = [
+                    classify_detection(d, frame, recognizer, svm, database)
+                    for d in detections
+                ]
 
             frame_count += 1
             status_lines = []
-            recognized_ids = set()
+            active_liveness_keys = set()
 
-            for result in cached_results:
-                match = result["match"]
-                if match is None:
-                    continue
-
-                student_id = match["student_id"]
-                recognized_ids.add(student_id)
-                name = match["name"]
-
-                if student_id in session_attendance_cache:
-                    status_lines.append(f"{name}: PRESENT")
-                    continue
-
-                x1, y1, x2, y2 = clamp_bbox(
-                    result["bbox"], frame.shape[1], frame.shape[0]
-                )
+            # Run liveness BEFORE requiring a successful SVM identity match.
+            # This lets a static phone photo be flagged even when SVM calls it
+            # UNKNOWN or gives it low confidence.
+            for detection_index, result in enumerate(cached_results):
+                x1, y1, x2, y2 = clamp_bbox(result["bbox"], frame.shape[1], frame.shape[0])
                 face_crop = frame[y1:y2, x1:x2]
                 if face_crop.size == 0:
                     continue
 
-                if student_id not in liveness_controllers:
-                    liveness_controllers[student_id] = LivenessDetector()
-                if student_id not in liveness_signals:
-                    liveness_signals[student_id] = FastLivenessSignals()
+                liveness_key = f"face_{detection_index}"
+                active_liveness_keys.add(liveness_key)
+                if liveness_key not in liveness_controllers:
+                    liveness_controllers[liveness_key] = LivenessDetector()
+                if liveness_key not in liveness_signals:
+                    liveness_signals[liveness_key] = FastLivenessSignals()
 
-                signals = liveness_signals[student_id].process(face_crop)
-                live_status = liveness_controllers[student_id].update(
+                signals = liveness_signals[liveness_key].process(face_crop)
+                live_status = liveness_controllers[liveness_key].update(
                     blink=signals["blink"],
                     direction=signals["direction"],
                     gaze=signals["gaze"],
                 )
 
+                match = result["match"]
                 if live_status == "POSSIBLE PHOTO - NO MOVEMENT DETECTED":
-                    spoof_warnings[student_id] = (
+                    warning_name = match["name"] if match else "Unrecognized face"
+                    spoof_warnings[liveness_key] = (
                         current_time.timestamp() + SPOOF_WARNING_SECONDS,
-                        name,
+                        warning_name,
                     )
-                    status_lines.append(f"WARNING {name}: POSSIBLE PHOTO")
+                    status_lines.append(f"WARNING {warning_name}: POSSIBLE PHOTO")
                     print(
-                        f"[SECURITY] Possible fake/duplicate photo for {name}; "
+                        f"[SECURITY] Possible static photo for {warning_name}; "
                         "attendance NOT marked."
                     )
                     continue
 
+                if match is None:
+                    status_lines.append(f"UNKNOWN: {live_status}")
+                    continue
+
+                student_id = match["student_id"]
+                name = match["name"]
+                confidence = match["confidence"]
+
+                if student_id in session_attendance_cache:
+                    status_lines.append(f"{name}: PRESENT")
+                    continue
+
                 status_lines.append(
-                    f"{name}: {live_status} (SVM: "
-                    f"{(match['confidence'] or 0) * 100:.1f}%)"
+                    f"{name}: {live_status} (SVM: {(confidence or 0) * 100:.1f}%)"
                 )
 
                 if live_status == "LIVE":
@@ -320,34 +283,34 @@ def main():
                         attendance_result = attendance.mark_attendance(
                             student_id=student_id,
                             name=name,
-                            confidence=float(match["confidence"] or 0.0),
+                            confidence=float(confidence or 0.0),
                             status=attendance_status,
                             session_id=session_id,
                         )
                         if attendance_result["success"]:
                             print(
-                                f"[ATTENDANCE] {name} marked "
-                                f"{attendance_status.upper()} for session {session_id} "
-                                f"(SVM {(match['confidence'] or 0) * 100:.1f}%)"
+                                f"[ATTENDANCE] {name} marked {attendance_status.upper()} "
+                                f"for session {session_id} (SVM {(confidence or 0) * 100:.1f}%)"
                             )
                             session_attendance_cache[student_id] = attendance_result["record"]
-                            liveness_controllers[student_id].reset()
+                            liveness_controllers[liveness_key].reset()
 
-            for student_id in list(liveness_signals):
-                if student_id not in recognized_ids:
-                    liveness_signals[student_id].close()
-                    del liveness_signals[student_id]
-                    liveness_controllers.pop(student_id, None)
+            for key in list(liveness_signals):
+                if key not in active_liveness_keys:
+                    liveness_signals[key].close()
+                    del liveness_signals[key]
+                    liveness_controllers.pop(key, None)
 
             for result in cached_results:
-                x1, y1, x2, y2 = result["bbox"]
+                x1, y1, x2, y2 = clamp_bbox(result["bbox"], frame.shape[1], frame.shape[0])
                 match = result["match"]
                 if match is not None:
                     confidence = match["confidence"]
-                    confidence_text = (
-                        f" {confidence * 100:.1f}%" if confidence is not None else ""
+                    label = (
+                        f"{match['name']} {confidence * 100:.1f}%"
+                        if confidence is not None
+                        else match["name"]
                     )
-                    label = f"{match['name']}{confidence_text}"
                     box_color = (0, 255, 0)
                 else:
                     label = "UNKNOWN"
@@ -355,82 +318,46 @@ def main():
 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
                 cv2.putText(
-                    frame,
-                    label,
-                    (x1, max(y1 - 10, 20)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
-                    box_color,
-                    2,
+                    frame, label, (x1, max(y1 - 10, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, box_color, 2,
                 )
 
-            remaining_seconds = max(
-                0, int(session_duration_seconds - elapsed_seconds)
+            remaining_seconds = max(0, int(session_duration_seconds - elapsed_seconds))
+            cv2.putText(
+                frame, f"Faces: {len(cached_results)}", (20, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2,
             )
             cv2.putText(
-                frame,
-                f"Faces: {len(cached_results)}",
-                (20, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 0),
-                2,
-            )
-            cv2.putText(
-                frame,
-                f"Session: {remaining_seconds // 60:02d}:{remaining_seconds % 60:02d}",
-                (20, 60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.65,
-                (255, 255, 0),
-                2,
+                frame, f"Session: {remaining_seconds // 60:02d}:{remaining_seconds % 60:02d}",
+                (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2,
             )
 
             y_offset = 90
             for line in status_lines[:6]:
                 cv2.putText(
-                    frame,
-                    line,
-                    (20, y_offset),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.55,
-                    (255, 255, 0),
-                    2,
+                    frame, line, (20, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 0), 2,
                 )
                 y_offset += 26
 
             active_warnings = [
                 (name, expiry)
-                for _, (expiry, name) in spoof_warnings.items()
+                for expiry, name in spoof_warnings.values()
                 if current_time.timestamp() < expiry
             ]
             if active_warnings:
                 box_x1, box_y1 = 15, frame.shape[0] - 75
                 box_x2, box_y2 = frame.shape[1] - 15, frame.shape[0] - 15
-                cv2.rectangle(
-                    frame,
-                    (box_x1, box_y1),
-                    (box_x2, box_y2),
-                    (0, 0, 180),
-                    -1,
+                cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (0, 0, 180), -1)
+                cv2.putText(
+                    frame, "SECURITY WARNING: FAKE / DUPLICATE PHOTO",
+                    (30, frame.shape[0] - 47), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55, (255, 255, 255), 2,
                 )
                 cv2.putText(
-                    frame,
-                    "SECURITY WARNING: FAKE / DUPLICATE PHOTO",
-                    (30, frame.shape[0] - 47),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.55,
-                    (255, 255, 255),
-                    2,
-                )
-                cv2.putText(
-                    frame,
-                    ", ".join(name for name, _ in active_warnings),
-                    (30, frame.shape[0] - 23),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    2,
+                    frame, ", ".join(name for name, _ in active_warnings),
+                    (30, frame.shape[0] - 23), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5, (255, 255, 255), 2,
                 )
 
             cv2.imshow(WINDOW_NAME, frame)
@@ -440,7 +367,6 @@ def main():
                     break
             except cv2.error:
                 break
-
             cv2.waitKey(1)
 
     finally:
@@ -449,9 +375,7 @@ def main():
         for signal_processor in liveness_signals.values():
             signal_processor.close()
         if not session_finished:
-            close_session_and_mark_absentees(
-                session_manager, attendance, face_db, current_session
-            )
+            close_session_and_mark_absentees(session_manager, attendance, face_db, current_session)
         print("\nVisionAttend AI SVM attendance stopped.")
         _log_handle.flush()
 
