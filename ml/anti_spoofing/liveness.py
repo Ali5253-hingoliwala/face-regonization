@@ -19,12 +19,10 @@ class LivenessDetector:
 
         self.start_time = time.time()
 
-        # How long to wait for ANY natural movement before
-        # considering the check still in progress.
+        # Presentation/demo setting: give a static photo about 10 seconds
+        # before flagging it, while still allowing normal live movement.
         self.checking_timeout = 3.0
-
-        # If completely static for this long, flag as a likely photo.
-        self.static_photo_timeout = 15.0
+        self.static_photo_timeout = 10.0
 
         self.last_direction = None
         self.last_gaze = None
@@ -72,15 +70,10 @@ class LivenessDetector:
             self.last_gaze = gaze
 
         if self.movement_detected:
-
             self.status = "LIVE"
-
         elif elapsed > self.static_photo_timeout:
-
             self.status = "POSSIBLE PHOTO - NO MOVEMENT DETECTED"
-
         else:
-
             self.status = "CHECKING"
 
         return self.status
@@ -92,13 +85,9 @@ class LivenessDetector:
         return self.movement_type
 
     def reset(self):
-
         self.start_time = time.time()
-
         self.last_direction = None
         self.last_gaze = None
-
         self.movement_detected = False
         self.movement_type = None
-
         self.status = "CHECKING"
