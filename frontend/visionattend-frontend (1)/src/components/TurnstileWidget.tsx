@@ -12,13 +12,19 @@ declare global {
 const SCRIPT_ID = "cloudflare-turnstile-script";
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
-export default function TurnstileWidget({ onToken, disabled = false }: { onToken: (token: string) => void; disabled?: boolean }) {
+type Props = {
+  onToken: (token: string) => void;
+  disabled?: boolean;
+  resetKey?: number;
+};
+
+export default function TurnstileWidget({ onToken, disabled = false, resetKey = 0 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | undefined>();
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
   useEffect(() => {
-    if (!siteKey || !containerRef.current || disabled) return;
+    if (!siteKey || !containerRef.current) return;
 
     const render = () => {
       if (!containerRef.current || !window.turnstile || widgetIdRef.current) return;
@@ -49,7 +55,13 @@ export default function TurnstileWidget({ onToken, disabled = false }: { onToken
       widgetIdRef.current = undefined;
       if (containerRef.current) containerRef.current.innerHTML = "";
     };
-  }, [siteKey, disabled, onToken]);
+  }, [siteKey, onToken]);
+
+  useEffect(() => {
+    if (!resetKey || !window.turnstile || !widgetIdRef.current) return;
+    window.turnstile.reset(widgetIdRef.current);
+    onToken("");
+  }, [resetKey, onToken]);
 
   if (!siteKey) {
     return <p className="text-xs text-absent">CAPTCHA is not configured. Set VITE_TURNSTILE_SITE_KEY.</p>;
