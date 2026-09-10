@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Bot, MessageCircle, Send, Sparkles, X } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -31,7 +32,7 @@ function renderInline(text: string) {
 
 function AssistantMessage({ content }: { content: string }) {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const blocks: JSX.Element[] = [];
+  const blocks: ReactNode[] = [];
   let bullets: string[] = [];
 
   const flushBullets = () => {
