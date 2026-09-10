@@ -3,6 +3,8 @@ uvicorn==0.52.3
 pydantic==2.13.4
 pydantic_core==2.46.4
 pymongo==3.12.0
+ dnspython==2.8.0
+certifi==2026.8.1
 python-dotenv==1.2.3
 requests==2.34.2
 google-genai
