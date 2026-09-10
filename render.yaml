@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: visionattend-api
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r requirements-cloud.txt
+    startCommand: uvicorn backend.render_main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.9
+      - key: RUN_LOCAL_ML
+        value: "false"
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.7-flash
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+
+  - type: static
+    name: visionattend-web
+    rootDir: frontend/visionattend-frontend (1)
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
+      - key: VITE_TURNSTILE_SITE_KEY
+        sync: false
