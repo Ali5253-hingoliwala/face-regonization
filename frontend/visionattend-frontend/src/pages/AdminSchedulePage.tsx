@@ -19,6 +19,12 @@ function toLocalInputValue(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+// datetime-local produces YYYY-MM-DDTHH:mm, while the backend validation
+// expects an ISO timestamp with seconds (at least 19 characters).
+function toApiDateTime(localValue: string) {
+  return localValue.length === 16 ? `${localValue}:00` : localValue;
+}
+
 const formatDate = (value: string) => new Date(value).toLocaleDateString(undefined, {
   weekday: "short",
   month: "short",
@@ -117,7 +123,7 @@ export default function AdminSchedulePage() {
       const displayName = name.trim() || "Untitled Session";
       const response = await api.post("/session/schedule", {
         name: displayName,
-        planned_start_time: start,
+        planned_start_time: toApiDateTime(start),
         duration_minutes: duration,
         late_after_minutes: Math.min(10, duration),
       });
